@@ -71,7 +71,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
     },
     {
       id: 3,
-      title: 'Expense recorded - Transport ₹3,500',
+      title: 'Expense recorded - Rental ₹3,500',
       time: 'Yesterday, 04:30 PM',
       color: 'bg-emerald-500',
     },
@@ -104,9 +104,9 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
     {
       id: '03',
       date: '18 Jun 2026',
-      category: 'Transport',
-      categoryColor: 'bg-blue-50 text-blue-600 border-blue-200/60',
-      description: 'Material Transport',
+      category: 'Rental',
+      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
+      description: 'Equipment Rental',
       amount: '₹3,500',
     },
   ];

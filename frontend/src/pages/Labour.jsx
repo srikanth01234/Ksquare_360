@@ -376,10 +376,8 @@ export default function Labour() {
                 <th className="py-3 px-4 w-12 text-center">#</th>
                 <th className="py-3 px-4">Worker</th>
                 <th className="py-3 px-4">Labour Type</th>
-                <th className="py-3 px-4">Assigned Site</th>
                 <th className="py-3 px-4">Daily Wage</th>
                 <th className="py-3 px-4">OT Rate</th>
-                <th className="py-3 px-4">Joining Date</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
@@ -420,19 +418,6 @@ export default function Labour() {
                     </span>
                   </td>
 
-                  {/* Assigned Site */}
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                        <Building2 size={16} />
-                      </div>
-                      <div>
-                        <div className="font-bold text-slate-800">{worker.siteName}</div>
-                        <div className="text-[10px] text-slate-400">{worker.siteCode}</div>
-                      </div>
-                    </div>
-                  </td>
-
                   {/* Daily Wage */}
                   <td className="py-3.5 px-4 font-bold text-slate-900">
                     {worker.dailyWage}
@@ -441,14 +426,6 @@ export default function Labour() {
                   {/* OT Rate */}
                   <td className="py-3.5 px-4 font-semibold text-slate-700">
                     {worker.otRate}
-                  </td>
-
-                  {/* Joining Date */}
-                  <td className="py-3.5 px-4 text-slate-600">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      <Calendar size={13} className="text-slate-400" />
-                      <span>{worker.joiningDate}</span>
-                    </div>
                   </td>
 
                   {/* Status */}

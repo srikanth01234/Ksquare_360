@@ -2,11 +2,12 @@ import React from 'react';
 import {
   LayoutDashboard,
   Building2,
+  Warehouse,
   HardHat,
   Wallet,
   CalendarDays,
   FileSpreadsheet,
-  BarChart3,
+  CheckCircle2,
   Settings,
   Layers,
 } from 'lucide-react';
@@ -18,11 +19,12 @@ export default function Sidebar({
   const menuItems = [
     { id: 'Dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'Sites', label: 'Sites', icon: Building2 },
+    { id: 'Godown', label: 'Godown (Inventory)', icon: Warehouse },
     { id: 'Labour', label: 'Labour', icon: HardHat },
     { id: 'Site Expenses', label: 'Site Expenses', icon: Wallet },
     { id: 'Daily Updates', label: 'Daily Updates', icon: CalendarDays },
     { id: 'Billing & Invoices', label: 'Billing & Invoices', icon: FileSpreadsheet },
-    { id: 'Reports', label: 'Reports', icon: BarChart3 },
+    { id: 'Completed Sites', label: 'Completed Sites', icon: CheckCircle2 },
     { id: 'Master Data', label: 'Master Data', icon: Layers },
   ];
 

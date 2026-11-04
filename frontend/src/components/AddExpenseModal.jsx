@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   FileSpreadsheet,
@@ -15,10 +15,15 @@ import {
   ChevronDown,
   Banknote,
   Send,
+  Upload,
+  Image as ImageIcon,
+  Hash,
+  Trash2,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
 
 export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
+  const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     category: 'Materials',
     site: 'Green Villa (KS-001)',
@@ -30,9 +35,12 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
     rate: '420',
     paymentMethod: 'Cash', // 'Cash' | 'UPI'
     paymentStatus: 'Paid',
+    transactionId: '',
     notes: '',
   });
 
+  const [screenshotPreview, setScreenshotPreview] = useState(null);
+  const [screenshotName, setScreenshotName] = useState('');
   const [totalAmount, setTotalAmount] = useState(21000);
 
   // Automatically calculate total = quantity * rate
@@ -41,6 +49,26 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
     const rate = parseFloat(formData.rate) || 0;
     setTotalAmount(qty * rate);
   }, [formData.quantity, formData.rate]);
+
+  const handleScreenshotChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      setScreenshotName(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setScreenshotPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveScreenshot = () => {
+    setScreenshotPreview(null);
+    setScreenshotName('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -64,6 +92,10 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
       supplier: formData.supplier || '-',
       amount: formattedAmount,
       paymentStatus: formData.paymentStatus,
+      paymentMethod: formData.paymentMethod,
+      transactionId: formData.transactionId ? formData.transactionId.trim() : null,
+      paymentScreenshot: screenshotPreview || null,
+      notes: formData.notes || '',
     };
 
     onAddExpense(newExpense);
@@ -118,8 +150,7 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
                   >
                     <option value="Materials">Materials</option>
                     <option value="Labour">Labour</option>
-                    <option value="Vehicle Rent">Vehicle Rent</option>
-                    <option value="Rent">Rent</option>
+                    <option value="Rental">Rental</option>
                     <option value="Other">Other Expenses</option>
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -398,6 +429,82 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
+              </div>
+            </div>
+
+            {/* Transaction ID & Payment Screenshot (Both Optional) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* Transaction ID Text Field */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Transaction ID <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <div className="relative">
+                  <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="e.g. UPI / Ref / TXN-2026110199"
+                    value={formData.transactionId}
+                    onChange={(e) => setFormData({ ...formData, transactionId: e.target.value })}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">UPI reference or bank transaction number</p>
+              </div>
+
+              {/* Payment Screenshot Image Upload Field */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Payment Screenshot <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleScreenshotChange}
+                  className="hidden"
+                  id="payment-screenshot-input"
+                />
+
+                {!screenshotPreview ? (
+                  <label
+                    htmlFor="payment-screenshot-input"
+                    className="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-50 border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-xl text-xs cursor-pointer transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:bg-emerald-100 transition-colors">
+                      <Upload size={14} />
+                    </div>
+                    <div className="flex-1 truncate">
+                      <div className="font-semibold text-slate-700 group-hover:text-emerald-700">Upload screenshot</div>
+                      <div className="text-[10px] text-slate-400 truncate">PNG, JPG or receipt photo</div>
+                    </div>
+                  </label>
+                ) : (
+                  <div className="flex items-center justify-between p-2 bg-emerald-50/60 border border-emerald-200/80 rounded-xl">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={screenshotPreview}
+                        alt="Screenshot Preview"
+                        className="w-10 h-10 object-cover rounded-lg border border-emerald-200 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-800 truncate">{screenshotName || 'Screenshot uploaded'}</div>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-semibold">
+                          <CheckCircle2 size={10} />
+                          <span>Ready</span>
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveScreenshot}
+                      className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors"
+                      title="Remove image"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

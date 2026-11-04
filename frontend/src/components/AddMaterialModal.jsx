@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   ArrowLeft,
   Package,
-  RotateCw,
   IndianRupee,
   Upload,
   Save,
@@ -14,11 +13,9 @@ import { CONSTRUCTION_MATERIALS } from '../constants/constructionData';
 export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
   const [formData, setFormData] = useState({
     name: '',
-    code: 'MAT-001',
     category: 'Cement',
     unit: 'Bags',
     price: '420',
-    tax: '18',
     description: '',
   });
 
@@ -94,29 +91,6 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
-                  Material Code <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={formData.code}
-                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, code: `MAT-${Math.floor(Math.random() * 899 + 100)}` })}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-emerald-600"
-                  >
-                    <RotateCw size={13} />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
                   Category <span className="text-rose-500">*</span>
                 </label>
                 <select
@@ -131,7 +105,9 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   <option value="Paint">Paint</option>
                 </select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
                   Unit <span className="text-rose-500">*</span>
@@ -142,6 +118,7 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
                 >
                   <option value="Bags">Bags</option>
+                  <option value="Loads">Loads</option>
                   <option value="Tons">Tons</option>
                   <option value="Kg">Kg</option>
                   <option value="Piece">Piece</option>
@@ -149,9 +126,7 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   <option value="Liters">Liters</option>
                 </select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
                   Standard Price (₹) <span className="text-rose-500">*</span>
@@ -163,22 +138,9 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                     placeholder="Enter price per unit"
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                    className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Tax (%) (Optional)
-                </label>
-                <input
-                  type="number"
-                  placeholder="Enter tax percentage"
-                  value={formData.tax}
-                  onChange={(e) => setFormData({ ...formData, tax: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
-                />
               </div>
             </div>
 

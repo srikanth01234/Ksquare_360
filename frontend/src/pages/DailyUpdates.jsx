@@ -22,9 +22,9 @@ import {
   User,
   CheckCircle2,
 } from 'lucide-react';
-import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
+import AddExpenseModal from '../components/AddExpenseModal';
 
-export default function DailyUpdates() {
+export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState('All Sites');
@@ -100,12 +100,22 @@ export default function DailyUpdates() {
     },
   ]);
 
-  const handleAddUpdate = (newUp) => {
-    const formatted = {
-      ...newUp,
+  const handleAddExpenseFromModal = (newExp) => {
+    const formattedUpdate = {
       id: String(updates.length + 1).padStart(2, '0'),
+      date: newExp.date || '01 Nov 2026',
+      siteName: newExp.siteName || 'Green Villa',
+      siteCode: newExp.siteCode || 'KS-001',
+      activity: `${newExp.category} Expense: ${newExp.description}`,
+      description: `${newExp.description} (${newExp.amount}) supplied by ${newExp.supplier || 'Vendor'}. Payment: ${newExp.paymentStatus}`,
+      labourCount: newExp.category === 'Labour' ? (Number(newExp.quantity) || 4) : 4,
+      materialsUsed: newExp.category === 'Materials' ? (newExp.description.split(' - ')[0] || 'Material') : '-',
+      duration: '8 hrs',
+      progress: 60,
+      status: 'In Progress',
     };
-    setUpdates([formatted, ...updates]);
+    setUpdates([formattedUpdate, ...updates]);
+    onExpenseAdded(newExp);
   };
 
   const handleDeleteUpdate = (id) => {
@@ -146,13 +156,13 @@ export default function DailyUpdates() {
           </div>
         </div>
 
-        {/* Add Daily Update Button */}
+        {/* Add Expense Button (Replacing Add Daily Update modal) */}
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs md:text-sm font-bold shadow-lg shadow-emerald-800/25 transition-all cursor-pointer self-start md:self-auto"
+          className="flex items-center gap-2 bg-[#0072ff] hover:bg-blue-600 text-white rounded-xl px-5 py-2.5 text-xs md:text-sm font-bold shadow-lg shadow-blue-500/25 transition-all cursor-pointer self-start md:self-auto"
         >
           <Plus size={16} />
-          <span>Add Daily Update</span>
+          <span>Add Expense</span>
         </button>
       </div>
 
@@ -486,11 +496,11 @@ export default function DailyUpdates() {
         </div>
       </div>
 
-      {/* Add Daily Update Modal */}
-      <AddDailyUpdateModal
+      {/* Add Expense Modal */}
+      <AddExpenseModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onAddUpdate={handleAddUpdate}
+        onAddExpense={handleAddExpenseFromModal}
       />
     </div>
   );

@@ -32,8 +32,7 @@ import {
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
 
-export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
+export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExpenses = null }) {
   const [activeTab, setActiveTab] = useState('All Expenses');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState('All Sites');
@@ -143,8 +142,10 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
     setExpenses(expenses.filter((item) => item.id !== id));
   };
 
+  const currentExpenses = sharedExpenses || expenses;
+
   // Filter logic
-  const filteredExpenses = expenses.filter((exp) => {
+  const filteredExpenses = currentExpenses.filter((exp) => {
     const matchesTab =
       activeTab === 'All Expenses' ||
       (activeTab === 'Other Expenses' && exp.category === 'Other') ||
@@ -192,7 +193,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
           </div>
         </div>
 
-        {/* Crane & Building Visual & Add Expense Button */}
+        {/* Crane & Building Visual */}
         <div className="relative w-full md:w-96 h-28 md:h-36 overflow-hidden flex items-center justify-end px-6 shrink-0">
           <img
             src="https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=600&q=80"
@@ -200,15 +201,6 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
             className="absolute inset-0 w-full h-full object-cover object-center opacity-85"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-white via-white/40 to-transparent md:from-white md:via-white/30 md:to-transparent" />
-
-          {/* Add Expense Button */}
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="relative z-10 flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs md:text-sm font-bold shadow-lg shadow-emerald-800/30 transition-all cursor-pointer"
-          >
-            <Plus size={16} />
-            <span>Add Expense</span>
-          </button>
         </div>
       </div>
 
@@ -572,13 +564,6 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
           </div>
         </div>
       </div>
-
-      {/* Add Expense Modal */}
-      <AddExpenseModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onAddExpense={handleAddExpense}
-      />
     </div>
   );
 }

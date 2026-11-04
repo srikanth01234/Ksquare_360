@@ -26,7 +26,7 @@ export default function Sites({ onSelectSite = () => {} }) {
   const [selectedType, setSelectedType] = useState('All Site Types');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
 
-  // Initial Sites Data
+  // Initial Sites Data (Active & Ongoing Projects only - Completed sites are in Completed Sites section)
   const [sites, setSites] = useState([
     {
       id: '01',
@@ -54,18 +54,6 @@ export default function Sites({ onSelectSite = () => {} }) {
     },
     {
       id: '03',
-      code: 'KS-003',
-      name: 'Dream House',
-      client: 'Ravi',
-      clientAvatar: 'R',
-      type: 'New Building',
-      location: 'Trichy',
-      budget: '₹18,00,000',
-      progress: 100,
-      status: 'Completed',
-    },
-    {
-      id: '04',
       code: 'KS-004',
       name: 'RK Residence',
       client: 'Suresh',
@@ -77,7 +65,7 @@ export default function Sites({ onSelectSite = () => {} }) {
       status: 'Planning',
     },
     {
-      id: '05',
+      id: '04',
       code: 'KS-005',
       name: 'Metro Apartment',
       client: 'Manikandan',
@@ -103,8 +91,10 @@ export default function Sites({ onSelectSite = () => {} }) {
     setSites(sites.filter((site) => site.id !== id));
   };
 
-  // Filtered sites
+  // Filtered sites (Completed sites excluded from this page)
   const filteredSites = sites.filter((site) => {
+    if (site.status === 'Completed') return false;
+
     const matchesSearch =
       site.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       site.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -183,14 +173,14 @@ export default function Sites({ onSelectSite = () => {} }) {
           </div>
         </div>
 
-        {/* Completed */}
+        {/* On Hold */}
         <div className="bg-[#f4f0ff] rounded-2xl p-5 border border-purple-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
           <div className="w-13 h-13 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
             <CheckCircle2 size={26} />
           </div>
           <div>
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">7</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">Completed</div>
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">2</div>
+            <div className="text-xs text-slate-500 font-medium mt-0.5">On Hold</div>
           </div>
         </div>
       </div>
@@ -255,7 +245,7 @@ export default function Sites({ onSelectSite = () => {} }) {
               <option value="All Status">All Status</option>
               <option value="Active">Active</option>
               <option value="Planning">Planning</option>
-              <option value="Completed">Completed</option>
+              <option value="On Hold">On Hold</option>
             </select>
             <TrendingUp size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />

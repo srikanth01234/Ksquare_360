@@ -33,16 +33,16 @@ export default function MasterData() {
 
   // Materials Master Data
   const [materialsList, setMaterialsList] = useState([
-    { id: 1, name: 'M-Sand', code: 'MAT-001', category: 'Sand', unit: 'Load', price: '₹5,500', tax: '5%', status: 'Active' },
-    { id: 2, name: 'P-Sand', code: 'MAT-002', category: 'Sand', unit: 'Load', price: '₹6,500', tax: '5%', status: 'Active' },
-    { id: 3, name: '20mm Blue Metal', code: 'MAT-003', category: 'Aggregates', unit: 'Load', price: '₹6,000', tax: '5%', status: 'Active' },
-    { id: 4, name: '40mm Blue Metal', code: 'MAT-004', category: 'Aggregates', unit: 'Load', price: '₹5,800', tax: '5%', status: 'Active' },
-    { id: 5, name: 'Cement', code: 'MAT-005', category: 'Cement', unit: 'Bag', price: '₹420', tax: '18%', status: 'Active' },
-    { id: 6, name: 'Chengal Brick (Red Brick)', code: 'MAT-006', category: 'Bricks', unit: 'Piece', price: '₹8.50', tax: '5%', status: 'Active' },
-    { id: 7, name: 'Cement Brick', code: 'MAT-007', category: 'Bricks', unit: 'Piece', price: '₹12.00', tax: '5%', status: 'Active' },
-    { id: 8, name: 'AAC Block', code: 'MAT-008', category: 'Blocks', unit: 'Piece', price: '₹65.00', tax: '12%', status: 'Active' },
-    { id: 9, name: 'AAC Paste', code: 'MAT-009', category: 'Paste', unit: 'Bag', price: '₹380', tax: '18%', status: 'Active' },
-    { id: 10, name: 'Steel', code: 'MAT-010', category: 'Steel', unit: 'Kg', price: '₹75.00', tax: '18%', status: 'Active' },
+    { id: 1, name: 'M-Sand', category: 'Sand', unit: 'Load', price: '₹5,500', status: 'Active' },
+    { id: 2, name: 'P-Sand', category: 'Sand', unit: 'Load', price: '₹6,500', status: 'Active' },
+    { id: 3, name: '20mm Blue Metal', category: 'Aggregates', unit: 'Load', price: '₹6,000', status: 'Active' },
+    { id: 4, name: '40mm Blue Metal', category: 'Aggregates', unit: 'Load', price: '₹5,800', status: 'Active' },
+    { id: 5, name: 'Cement', category: 'Cement', unit: 'Bag', price: '₹420', status: 'Active' },
+    { id: 6, name: 'Chengal Brick (Red Brick)', category: 'Bricks', unit: 'Piece', price: '₹8.50', status: 'Active' },
+    { id: 7, name: 'Cement Brick', category: 'Bricks', unit: 'Piece', price: '₹12.00', status: 'Active' },
+    { id: 8, name: 'AAC Block', category: 'Blocks', unit: 'Piece', price: '₹65.00', status: 'Active' },
+    { id: 9, name: 'AAC Paste', category: 'Paste', unit: 'Bag', price: '₹380', status: 'Active' },
+    { id: 10, name: 'Steel', category: 'Steel', unit: 'Kg', price: '₹75.00', status: 'Active' },
   ]);
 
   const handleSaveMaterial = (newMat) => {
@@ -50,11 +50,9 @@ export default function MasterData() {
       {
         id: Date.now(),
         name: newMat.name,
-        code: newMat.code,
         category: newMat.category || 'General',
         unit: newMat.unit,
         price: `₹${newMat.price}`,
-        tax: `${newMat.tax || 18}%`,
         status: 'Active',
       },
       ...materialsList,
@@ -492,11 +490,9 @@ export default function MasterData() {
                   <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                     <th className="py-3 px-5">#</th>
                     <th className="py-3 px-5">Material Name</th>
-                    <th className="py-3 px-5">Code</th>
                     <th className="py-3 px-5">Category</th>
                     <th className="py-3 px-5">Unit</th>
                     <th className="py-3 px-5">Standard Price</th>
-                    <th className="py-3 px-5">Tax Rate</th>
                     <th className="py-3 px-5">Status</th>
                     <th className="py-3 px-5 text-right">Actions</th>
                   </tr>
@@ -507,18 +503,12 @@ export default function MasterData() {
                       <td className="py-3 px-5 text-slate-400 font-bold">{idx + 1}</td>
                       <td className="py-3 px-5 font-bold text-slate-900">{mat.name}</td>
                       <td className="py-3 px-5">
-                        <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                          {mat.code}
-                        </span>
-                      </td>
-                      <td className="py-3 px-5">
                         <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200/50">
                           {mat.category}
                         </span>
                       </td>
                       <td className="py-3 px-5">{mat.unit}</td>
                       <td className="py-3 px-5 font-bold text-slate-900">{mat.price}</td>
-                      <td className="py-3 px-5 text-slate-500">{mat.tax}</td>
                       <td className="py-3 px-5">
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />

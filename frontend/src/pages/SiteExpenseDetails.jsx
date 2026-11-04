@@ -242,20 +242,12 @@ export default function SiteExpenseDetails({
           </div>
         </div>
 
-        {/* Right: Date Range & Add Expense Button */}
+        {/* Right: Date Range */}
         <div className="flex items-center gap-3 self-end md:self-auto">
           <button className="flex items-center gap-2 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs hover:border-slate-300 transition-colors">
             <Calendar size={14} className="text-slate-400" />
             <span>01 Oct 2026 – 31 Oct 2026</span>
             <ChevronDown size={13} className="text-slate-400" />
-          </button>
-
-          <button
-            onClick={() => setIsAddExpenseOpen(true)}
-            className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/25 transition-all cursor-pointer whitespace-nowrap"
-          >
-            <Plus size={16} />
-            <span>Add Expense</span>
           </button>
         </div>
       </div>
@@ -522,13 +514,6 @@ export default function SiteExpenseDetails({
           <strong>Tip:</strong> Use the tabs above to view Labour Expenses and Rental Expenses for this site.
         </span>
       </div>
-
-      {/* Add Expense Modal */}
-      <AddExpenseModal
-        isOpen={isAddExpenseOpen}
-        onClose={() => setIsAddExpenseOpen(false)}
-        onAddExpense={() => {}}
-      />
     </div>
   );
 }
