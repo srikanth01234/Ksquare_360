@@ -138,7 +138,7 @@ export default function MasterData() {
   );
 
   return (
-    <div className="p-5 md:p-8 space-y-6 max-w-[1600px] mx-auto bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+    <div className="p-5 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
       {/* 1. Header Banner */}
       <div className="relative bg-white rounded-3xl border border-slate-100 p-6 md:p-8 shadow-sm overflow-hidden flex items-center justify-between">
         <div className="flex items-center gap-4 relative z-10">

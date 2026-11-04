@@ -112,7 +112,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   ];
 
   return (
-    <div className="p-5 md:p-7 space-y-5 max-w-[1600px] mx-auto bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+    <div className="p-5 md:p-7 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
       {/* 1. Breadcrumbs */}
       <nav className="flex items-center gap-2 text-xs font-medium text-slate-500">
         <button

@@ -1,15 +1,20 @@
 // Master List of Construction Materials
 export const CONSTRUCTION_MATERIALS = [
+  'Cement',
   'M-Sand',
   'P-Sand',
-  '20mm Blue Metal',
-  '40mm Blue Metal',
-  'Cement',
+  '20 mm Blue Metal',
+  '40 mm Blue Metal',
+  'Steel',
+  'Rings',
+  'Chamber Bricks',
+  'Fly Ash Bricks',
+  'Solid Block – 6 Inch',
+  'Solid Block – 4 Inch',
   'Chengal Brick (Red Brick)',
   'Cement Brick',
   'AAC Block',
   'AAC Paste',
-  'Steel',
 ];
 
 // Master List of Labour / Worker Trades

@@ -90,7 +90,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="p-6 md:p-8 space-y-6 max-w-[1600px] mx-auto bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+    <div className="p-6 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
       {/* 1. Header Greeting & Date Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">

@@ -6,12 +6,10 @@ import {
   Building2,
   Calendar,
   User,
-  Truck,
   AlertTriangle,
   ChevronDown,
-  Layers,
-  Send,
   CheckCircle2,
+  Send,
 } from 'lucide-react';
 
 export default function IssueStockModal({
@@ -30,14 +28,13 @@ export default function IssueStockModal({
   const [siteCode, setSiteCode] = useState('KS-001');
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
   const [quantity, setQuantity] = useState('');
-  const [issuedTo, setIssuedTo] = useState('Muthu (Supervisor)');
-  const [vehicleNo, setVehicleNo] = useState('');
-  const [dcNumber, setDcNumber] = useState('');
+  const [issuedTo, setIssuedTo] = useState('Site Supervisor');
   const [remarks, setRemarks] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   // Selected material record
-  const currentMaterial = materials.find((m) => m.name === selectedMaterialName) || materials[0] || null;
+  const currentMaterial =
+    materials.find((m) => m.name === selectedMaterialName) || materials[0] || null;
 
   useEffect(() => {
     if (materials.length > 0 && !selectedMaterialName) {
@@ -45,10 +42,8 @@ export default function IssueStockModal({
     }
   }, [materials, isOpen]);
 
-  // Generate DC number
   useEffect(() => {
     if (isOpen) {
-      setDcNumber(`DC-${Math.floor(1000 + Math.random() * 9000)}`);
       setErrorMsg('');
       setQuantity('');
     }
@@ -63,7 +58,9 @@ export default function IssueStockModal({
     setQuantity(val);
     const num = parseFloat(val) || 0;
     if (num > availableStock) {
-      setErrorMsg(`Cannot issue ${num} ${unit}! Maximum available stock in godown is ${availableStock} ${unit}.`);
+      setErrorMsg(
+        `Cannot issue ${num} ${unit}! Maximum available stock in godown is ${availableStock} ${unit}.`
+      );
     } else if (num <= 0 && val !== '') {
       setErrorMsg('Quantity must be greater than zero.');
     } else {
@@ -86,7 +83,9 @@ export default function IssueStockModal({
     }
 
     if (qty > availableStock) {
-      setErrorMsg(`Cannot issue ${qty} ${unit}! Maximum available stock is ${availableStock} ${unit}.`);
+      setErrorMsg(
+        `Cannot issue ${qty} ${unit}! Maximum available stock is ${availableStock} ${unit}.`
+      );
       return;
     }
 
@@ -103,8 +102,6 @@ export default function IssueStockModal({
       projectLabel: `${selectedSite.name} (${selectedSite.code})`,
       date: issueDate,
       issuedTo: issuedTo || 'Site Incharge',
-      vehicleNo: vehicleNo || '-',
-      refNo: dcNumber,
       remarks: remarks || `Dispatched to ${selectedSite.name}`,
     });
 
@@ -113,22 +110,22 @@ export default function IssueStockModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
+      <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-7 pt-6 pb-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/70 via-white to-white">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-blue-100/70 border border-blue-200 text-blue-700 flex items-center justify-center shadow-xs shrink-0">
-              <ArrowUpRight size={22} />
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/70 via-white to-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-blue-100 border border-blue-200 text-blue-700 flex items-center justify-center shadow-xs shrink-0">
+              <ArrowUpRight size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Issue Stock (Outward)</h2>
+                <h2 className="text-lg font-bold text-slate-900 tracking-tight">Issue Stock (Outward)</h2>
                 <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
                   Transfer to Site
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Issue materials from godown to an active construction project.
+                Issue materials from godown to an active site.
               </p>
             </div>
           </div>
@@ -140,236 +137,175 @@ export default function IssueStockModal({
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="px-7 py-5 space-y-4 max-h-[78vh] overflow-y-auto text-xs">
-          {/* Material Selection & Live Stock Indicator */}
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/60 text-blue-800 font-bold">
-              <Package size={13} />
-              <span>Material & Availability</span>
+        {/* Simple Form (Essential Fields Only) */}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4 text-xs">
+          {/* Material Selection */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-800">
+                Material to Issue <span className="text-rose-500">*</span>
+              </label>
+              <span className={`text-[11px] font-black ${availableStock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                In Stock: {availableStock} {unit}
+              </span>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Select Material <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <select
-                    value={selectedMaterialName}
-                    onChange={(e) => setSelectedMaterialName(e.target.value)}
-                    className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
-                  >
-                    {materials.map((m) => (
-                      <option key={m.id || m.name} value={m.name}>
-                        {m.name} ({m.availableQuantity} {m.unit} available)
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Live Stock Meter Badge */}
-              <div className="flex flex-col justify-end">
-                <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="font-semibold text-slate-600">Godown Available:</span>
-                  </div>
-                  <div className="text-right">
-                    <span className={`text-sm font-extrabold ${availableStock > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                      {availableStock} {unit}
-                    </span>
-                    <div className="text-[10px] text-slate-400">Location: {currentMaterial?.godownLocation || 'Main Yard'}</div>
-                  </div>
-                </div>
-              </div>
+            <div className="relative">
+              <select
+                value={selectedMaterialName}
+                onChange={(e) => setSelectedMaterialName(e.target.value)}
+                className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
+              >
+                {materials.map((m) => (
+                  <option key={m.id || m.name} value={m.name}>
+                    {m.name} ({m.availableQuantity} {m.unit} available)
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
             </div>
           </div>
 
-          {/* Destination Project & Issue Date */}
-          <div className="space-y-3 pt-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-bold">
-              <Building2 size={13} />
-              <span>Destination Construction Site</span>
+          {/* Construction Site & Issue Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                Destination Site <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={siteCode}
+                  onChange={(e) => setSiteCode(e.target.value)}
+                  className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
+                >
+                  {sites.map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.name} ({s.code})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Target Project / Site <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <select
-                    value={siteCode}
-                    onChange={(e) => setSiteCode(e.target.value)}
-                    className="w-full appearance-none pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
-                  >
-                    {sites.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.name} ({s.code}) - {s.location}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Issue Date <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="date"
-                    required
-                    value={issueDate}
-                    onChange={(e) => setIssueDate(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  DC / Transfer Slip No.
-                </label>
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                Issue Date <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 <input
-                  type="text"
-                  value={dcNumber}
-                  onChange={(e) => setDcNumber(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  type="date"
+                  required
+                  value={issueDate}
+                  onChange={(e) => setIssueDate(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
                 />
               </div>
             </div>
           </div>
 
-          {/* Quantity to Issue & Dispatch Logistics */}
-          <div className="space-y-3 pt-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 font-bold">
-              <Truck size={13} />
-              <span>Issue Quantity & Logistics</span>
+          {/* Quantity to Issue */}
+          <div>
+            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+              Quantity to Issue <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                step="any"
+                min="0.01"
+                max={availableStock}
+                required
+                placeholder={`Max ${availableStock}`}
+                value={quantity}
+                onChange={(e) => handleQuantityChange(e.target.value)}
+                className={`w-full pl-3.5 pr-14 py-2.5 bg-white border rounded-xl font-black text-slate-900 focus:outline-none focus:ring-2 shadow-2xs ${
+                  errorMsg
+                    ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500'
+                    : 'border-slate-300 focus:ring-blue-500/20 focus:border-blue-600'
+                }`}
+              />
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-extrabold text-slate-600 pointer-events-none">
+                {unit}
+              </span>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Quantity to Issue <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.01"
-                    max={availableStock}
-                    required
-                    placeholder={`Max ${availableStock}`}
-                    value={quantity}
-                    onChange={(e) => handleQuantityChange(e.target.value)}
-                    className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 ${
-                      errorMsg ? 'border-rose-400 focus:ring-rose-500/20' : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'
-                    }`}
-                  />
-                  <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-                    {unit}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Issued To / Receiver <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Muthu (Site Engineer)"
-                    value={issuedTo}
-                    onChange={(e) => setIssuedTo(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1.5">
-                  Vehicle No. <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <div className="relative">
-                  <Truck size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="e.g. TN 09 BX 4412"
-                    value={vehicleNo}
-                    onChange={(e) => setVehicleNo(e.target.value)}
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Error Message Alert */}
-            {errorMsg && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-semibold animate-in fade-in duration-150">
-                <AlertTriangle size={15} className="shrink-0 text-rose-600" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            {/* Live Remaining Preview */}
-            {!errorMsg && quantity && parseFloat(quantity) > 0 && (
-              <div className="p-3 bg-blue-50/70 border border-blue-200/60 rounded-xl flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-blue-800 font-medium">
-                  <CheckCircle2 size={15} className="text-blue-600 shrink-0" />
-                  <span>Valid issue request</span>
-                </div>
-                <div className="text-blue-900 font-bold">
-                  Remaining in Godown after issue:{' '}
-                  <span className="font-extrabold text-blue-700">
-                    {(availableStock - parseFloat(quantity)).toFixed(1)} {unit}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Remarks */}
+          {/* Error Message Alert */}
+          {errorMsg && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-semibold animate-in fade-in duration-150">
+              <AlertTriangle size={15} className="shrink-0 text-rose-600" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Remaining Stock Preview */}
+          {!errorMsg && quantity && parseFloat(quantity) > 0 && (
+            <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 text-blue-800 font-semibold">
+                <CheckCircle2 size={14} className="text-blue-600 shrink-0" />
+                <span>Ready to dispatch</span>
+              </div>
+              <div className="text-blue-900 font-bold">
+                Remaining:{' '}
+                <span className="font-black text-blue-700">
+                  {(availableStock - parseFloat(quantity)).toFixed(1)} {unit}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Receiver / Site Incharge (Optional) */}
           <div>
-            <label className="block font-semibold text-slate-700 mb-1.5">Work Stage / Purpose</label>
+            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+              Issued To / Receiver <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <div className="relative">
+              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="e.g. Muthu (Site Supervisor)"
+                value={issuedTo}
+                onChange={(e) => setIssuedTo(e.target.value)}
+                className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
+              />
+            </div>
+          </div>
+
+          {/* Remarks / Purpose (Optional) */}
+          <div>
+            <label className="block text-xs font-bold text-slate-800 mb-1.5">
+              Remarks / Purpose <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
             <textarea
               rows={2}
-              placeholder="e.g. For foundation casting slab pouring at Green Villa..."
+              placeholder="e.g. For foundation casting / column work..."
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 resize-none shadow-2xs"
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+          {/* Footer Actions */}
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="px-5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={Boolean(errorMsg) || !quantity}
-              className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer ${
+              className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer ${
                 Boolean(errorMsg) || !quantity
                   ? 'bg-slate-300 shadow-none cursor-not-allowed text-slate-500'
-                  : 'bg-[#0072ff] hover:bg-blue-600 shadow-blue-500/25'
+                  : 'bg-[#0072ff] hover:bg-blue-600 shadow-blue-500/20'
               }`}
             >
               <Send size={15} />
-              <span>Confirm & Issue Stock</span>
+              <span>Confirm & Issue</span>
             </button>
           </div>
         </form>
@@ -377,4 +313,3 @@ export default function IssueStockModal({
     </div>
   );
 }
-

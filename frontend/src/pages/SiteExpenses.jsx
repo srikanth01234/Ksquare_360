@@ -169,7 +169,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
   });
 
   return (
-    <div className="p-5 md:p-8 space-y-5 max-w-[1600px] mx-auto bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+    <div className="p-5 md:p-8 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
       {/* 1. Breadcrumb */}
       <nav className="flex items-center gap-2 text-xs font-medium text-slate-500">
         <Home size={13} className="text-slate-400" />
