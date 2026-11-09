@@ -14,12 +14,17 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import MasterData from './pages/MasterData';
 import Godown from './pages/Godown';
+import Payments from './pages/Payments';
+import { INITIAL_MATERIALS } from './constants/materialsData';
 
 export default function App() {
   const [activeNav, setActiveNav] = useState('Dashboard');
   const [selectedSite, setSelectedSite] = useState(null);
   const [selectedSiteExpense, setSelectedSiteExpense] = useState(null);
   const [isCreatingInvoice, setIsCreatingInvoice] = useState(false);
+
+  // Global shared materials catalog (syncs real-time between Master Data and Godown Stock)
+  const [materials, setMaterials] = useState(INITIAL_MATERIALS);
 
   // Global shared expenses state (added from Daily Updates screen and visible across Site Expenses)
   const [expenses, setExpenses] = useState([
@@ -141,6 +146,8 @@ export default function App() {
               ? 'Labour Management'
               : activeNav === 'Site Expenses'
               ? 'Site Expenses'
+              : activeNav === 'Payments'
+              ? 'Payments Management'
               : activeNav === 'Daily Updates'
               ? 'Daily Updates'
               : activeNav === 'Billing & Invoices'
@@ -172,7 +179,9 @@ export default function App() {
             />
           )}
 
-          {activeNav === 'Godown' && <Godown />}
+          {activeNav === 'Godown' && (
+            <Godown materials={materials} setMaterials={setMaterials} />
+          )}
 
           {activeNav === 'Labour' && <Labour />}
 
@@ -199,6 +208,8 @@ export default function App() {
             />
           )}
 
+          {activeNav === 'Payments' && <Payments />}
+
           {activeNav === 'Daily Updates' && (
             <DailyUpdates onExpenseAdded={handleAddExpense} />
           )}
@@ -218,7 +229,9 @@ export default function App() {
 
           {(activeNav === 'Completed Sites' || activeNav === 'Reports') && <Reports />}
 
-          {activeNav === 'Master Data' && <MasterData />}
+          {activeNav === 'Master Data' && (
+            <MasterData materials={materials} setMaterials={setMaterials} />
+          )}
 
           {activeNav === 'Settings' && <Settings />}
         </main>

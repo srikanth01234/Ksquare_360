@@ -17,12 +17,22 @@ import {
   Building2,
   CheckCircle2,
   Clock,
+  Check,
+  X,
+  AlertCircle,
+  ToggleLeft,
+  ToggleRight,
+  Tag,
 } from 'lucide-react';
 import AddClientModal from '../components/AddClientModal';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import AddMaterialModal from '../components/AddMaterialModal';
+import { INITIAL_MATERIALS } from '../constants/materialsData';
 
-export default function MasterData() {
+export default function MasterData({
+  materials: externalMaterials,
+  setMaterials: externalSetMaterials,
+}) {
   const [activeTab, setActiveTab] = useState('Clients'); // 'Clients' | 'Employees' | 'Materials'
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -31,32 +41,60 @@ export default function MasterData() {
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
 
-  // Materials Master Data
-  const [materialsList, setMaterialsList] = useState([
-    { id: 1, name: 'M-Sand', category: 'Sand', unit: 'Load', price: '₹5,500', status: 'Active' },
-    { id: 2, name: 'P-Sand', category: 'Sand', unit: 'Load', price: '₹6,500', status: 'Active' },
-    { id: 3, name: '20mm Blue Metal', category: 'Aggregates', unit: 'Load', price: '₹6,000', status: 'Active' },
-    { id: 4, name: '40mm Blue Metal', category: 'Aggregates', unit: 'Load', price: '₹5,800', status: 'Active' },
-    { id: 5, name: 'Cement', category: 'Cement', unit: 'Bag', price: '₹420', status: 'Active' },
-    { id: 6, name: 'Chengal Brick (Red Brick)', category: 'Bricks', unit: 'Piece', price: '₹8.50', status: 'Active' },
-    { id: 7, name: 'Cement Brick', category: 'Bricks', unit: 'Piece', price: '₹12.00', status: 'Active' },
-    { id: 8, name: 'AAC Block', category: 'Blocks', unit: 'Piece', price: '₹65.00', status: 'Active' },
-    { id: 9, name: 'AAC Paste', category: 'Paste', unit: 'Bag', price: '₹380', status: 'Active' },
-    { id: 10, name: 'Steel', category: 'Steel', unit: 'Kg', price: '₹75.00', status: 'Active' },
-  ]);
+  // Materials Master Data (Shared with Godown Stock)
+  const [internalMaterials, setInternalMaterials] = useState(INITIAL_MATERIALS);
+  const materialsList = externalMaterials || internalMaterials;
+  const setMaterialsList = externalSetMaterials || setInternalMaterials;
+  const [materialStatusFilter, setMaterialStatusFilter] = useState('All'); // 'All' | 'Active' | 'Inactive'
+  const [editingPriceId, setEditingPriceId] = useState(null);
+  const [editPriceVal, setEditPriceVal] = useState('');
+
+  // Start inline price editing
+  const handleStartEditPrice = (mat) => {
+    setEditingPriceId(mat.id);
+    setEditPriceVal(String(mat.price));
+  };
+
+  // Save updated master price (Updates live master catalogue and future godown operations)
+  const handleSavePrice = (id) => {
+    const numeric = parseFloat(editPriceVal);
+    if (!isNaN(numeric) && numeric >= 0) {
+      setMaterialsList((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, price: numeric } : m))
+      );
+    }
+    setEditingPriceId(null);
+  };
+
+  // Toggle Active / Inactive status
+  const handleToggleStatus = (id) => {
+    setMaterialsList((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? { ...m, status: m.status === 'Active' ? 'Inactive' : 'Active' }
+          : m
+      )
+    );
+  };
 
   const handleSaveMaterial = (newMat) => {
-    setMaterialsList([
-      {
-        id: Date.now(),
-        name: newMat.name,
-        category: newMat.category || 'General',
-        unit: newMat.unit,
-        price: `₹${newMat.price}`,
-        status: 'Active',
-      },
-      ...materialsList,
-    ]);
+    const created = {
+      id: `MAT-${Date.now().toString().slice(-4)}`,
+      name: newMat.name,
+      category: newMat.category || 'General',
+      unit: newMat.unit || 'Bags',
+      price: parseFloat(newMat.price) || 0,
+      stock: 0,
+      availableQuantity: 0,
+      totalPurchased: 0,
+      totalIssued: 0,
+      minStock: 10,
+      minStockLevel: 10,
+      status: 'Active',
+      image: newMat.image || 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
+      description: newMat.description || 'Custom construction material added to catalogue.',
+    };
+    setMaterialsList((prev) => [created, ...prev]);
   };
 
   // Clients Data
@@ -462,68 +500,237 @@ export default function MasterData() {
       {activeTab === 'Materials' && (
         <div className="space-y-4">
           {/* Action & Stats Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center shrink-0">
                 <Package size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">Construction Materials ({materialsList.length})</h3>
-                <p className="text-[11px] text-slate-500">Standard rates and specifications for inventory and billing</p>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  Construction Materials Catalogue ({materialsList.length})
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Standard master rates and active availability for godown stock & billing
+                </p>
               </div>
             </div>
 
-            <button
-              onClick={() => setIsMaterialModalOpen(true)}
-              className="flex items-center gap-2 bg-[#0072ff] hover:bg-blue-600 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer self-start sm:self-auto"
-            >
-              <Plus size={15} />
-              <span>Add Material</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                onClick={() => setIsMaterialModalOpen(true)}
+                className="flex items-center gap-2 bg-[#0072ff] hover:bg-blue-600 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+              >
+                <Plus size={15} />
+                <span>Add Material</span>
+              </button>
+            </div>
           </div>
 
-          {/* Materials Table */}
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+          {/* Important Rule Notice Banner */}
+          <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl flex items-start gap-3 text-xs text-blue-900">
+            <AlertCircle size={16} className="text-blue-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold">Master Pricing & Status Policy:</span>
+              <p className="text-[11px] text-blue-800/90 leading-relaxed">
+                The master price is used as the default price for godown stock records. Changing the master price will not change historical purchase prices of existing stock or previously recorded expenses. Inactive materials are hidden from new stock operations, while historical records remain accessible.
+              </p>
+            </div>
+          </div>
+
+          {/* Filter Bar: Status Pills & Search */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <button
+                onClick={() => setMaterialStatusFilter('All')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  materialStatusFilter === 'All'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                All Materials ({materialsList.length})
+              </button>
+              <button
+                onClick={() => setMaterialStatusFilter('Active')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  materialStatusFilter === 'Active'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-white text-emerald-800 hover:bg-emerald-50 border border-emerald-200'
+                }`}
+              >
+                Active ({materialsList.filter((m) => m.status === 'Active').length})
+              </button>
+              <button
+                onClick={() => setMaterialStatusFilter('Inactive')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  materialStatusFilter === 'Inactive'
+                    ? 'bg-rose-700 text-white shadow-xs'
+                    : 'bg-white text-rose-800 hover:bg-rose-50 border border-rose-200'
+                }`}
+              >
+                Inactive / Discontinued ({materialsList.filter((m) => m.status === 'Inactive').length})
+              </button>
+            </div>
+          </div>
+
+          {/* Materials Table with Editable Default Price & Status Toggle */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
-                    <th className="py-3 px-5">#</th>
-                    <th className="py-3 px-5">Material Name</th>
-                    <th className="py-3 px-5">Category</th>
-                    <th className="py-3 px-5">Unit</th>
-                    <th className="py-3 px-5">Standard Price</th>
-                    <th className="py-3 px-5">Status</th>
-                    <th className="py-3 px-5 text-right">Actions</th>
+                  <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider">
+                    <th className="py-3.5 px-4 w-12 text-center">#</th>
+                    <th className="py-3.5 px-4">Material</th>
+                    <th className="py-3.5 px-4">Category</th>
+                    <th className="py-3.5 px-4">Unit</th>
+                    <th className="py-3.5 px-4">Default Price (Editable)</th>
+                    <th className="py-3.5 px-4 text-center">Stock Status</th>
+                    <th className="py-3.5 px-4 text-center">Quick Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                  {materialsList.map((mat, idx) => (
-                    <tr key={mat.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-5 text-slate-400 font-bold">{idx + 1}</td>
-                      <td className="py-3 px-5 font-bold text-slate-900">{mat.name}</td>
-                      <td className="py-3 px-5">
-                        <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200/50">
-                          {mat.category}
-                        </span>
-                      </td>
-                      <td className="py-3 px-5">{mat.unit}</td>
-                      <td className="py-3 px-5 font-bold text-slate-900">{mat.price}</td>
-                      <td className="py-3 px-5">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>{mat.status}</span>
-                        </span>
-                      </td>
-                      <td className="py-3 px-5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-colors">
-                            <Edit2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {materialsList
+                    .filter((m) => {
+                      if (materialStatusFilter === 'Active') return m.status === 'Active';
+                      if (materialStatusFilter === 'Inactive') return m.status === 'Inactive';
+                      return true;
+                    })
+                    .map((mat, idx) => {
+                      const isEditing = editingPriceId === mat.id;
+                      const isActive = mat.status === 'Active';
+
+                      return (
+                        <tr
+                          key={mat.id}
+                          className={`hover:bg-slate-50/80 transition-colors ${
+                            !isActive ? 'bg-slate-50/50 opacity-80' : ''
+                          }`}
+                        >
+                          {/* Number */}
+                          <td className="py-3.5 px-4 text-center text-slate-400 font-bold">
+                            {idx + 1}
+                          </td>
+
+                          {/* Material Name & Photo */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 shadow-2xs">
+                                <img
+                                  src={mat.image}
+                                  alt={mat.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src =
+                                      'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80';
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <div className="font-extrabold text-slate-900 text-xs md:text-sm">
+                                  {mat.name}
+                                </div>
+                                <div className="text-[10px] text-slate-500 line-clamp-1 max-w-xs">
+                                  {mat.description || 'Standard building material'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Category */}
+                          <td className="py-3.5 px-4">
+                            <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200/50">
+                              {mat.category}
+                            </span>
+                          </td>
+
+                          {/* Unit */}
+                          <td className="py-3.5 px-4 font-semibold text-slate-800">
+                            {mat.unit}
+                          </td>
+
+                          {/* Editable Default Price */}
+                          <td className="py-3.5 px-4">
+                            {isEditing ? (
+                              <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
+                                <span className="font-bold text-slate-500">₹</span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  autoFocus
+                                  value={editPriceVal}
+                                  onChange={(e) => setEditPriceVal(e.target.value)}
+                                  className="w-24 px-2 py-1 bg-white border-2 border-emerald-500 rounded-lg text-xs font-black text-slate-900 focus:outline-none shadow-xs"
+                                />
+                                <button
+                                  onClick={() => handleSavePrice(mat.id)}
+                                  className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
+                                  title="Save Price"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button
+                                  onClick={() => setEditingPriceId(null)}
+                                  className="w-7 h-7 rounded-lg border border-slate-300 text-slate-600 flex items-center justify-center hover:bg-slate-100 transition-colors cursor-pointer"
+                                  title="Cancel"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <div
+                                onClick={() => handleStartEditPrice(mat)}
+                                className="group inline-flex items-center gap-2 cursor-pointer p-1 -m-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                title="Click to edit default price"
+                              >
+                                <span className="font-black text-slate-900 text-sm">
+                                  ₹ {Number(mat.price).toLocaleString('en-IN')}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  / {mat.unit}
+                                </span>
+                                <span className="opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">
+                                  <Edit2 size={12} />
+                                </span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Status Toggle (Active / Inactive) */}
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              onClick={() => handleToggleStatus(mat.id)}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                                isActive
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                  : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                              }`}
+                              title={`Click to mark as ${isActive ? 'Inactive' : 'Active'}`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  isActive ? 'bg-emerald-600' : 'bg-rose-600'
+                                }`}
+                              />
+                              <span>{mat.status}</span>
+                            </button>
+                          </td>
+
+                          {/* Quick Actions */}
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => handleStartEditPrice(mat)}
+                                className="px-2.5 py-1 rounded-lg border border-slate-300 text-slate-700 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Edit2 size={11} />
+                                <span>Edit Rate</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

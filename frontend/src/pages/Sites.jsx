@@ -30,7 +30,7 @@ export default function Sites({ onSelectSite = () => {} }) {
   const [sites, setSites] = useState([
     {
       id: '01',
-      code: 'KS-001',
+      code: 'CHN-11-2026-NB-01',
       name: 'Green Villa',
       client: 'Arun Kumar',
       clientAvatar: 'A',
@@ -42,7 +42,7 @@ export default function Sites({ onSelectSite = () => {} }) {
     },
     {
       id: '02',
-      code: 'KS-002',
+      code: 'MDU-10-2026-RE-02',
       name: 'Office Renovation',
       client: 'Kumar',
       clientAvatar: 'K',
@@ -54,7 +54,7 @@ export default function Sites({ onSelectSite = () => {} }) {
     },
     {
       id: '03',
-      code: 'KS-004',
+      code: 'TNV-09-2026-NB-03',
       name: 'RK Residence',
       client: 'Suresh',
       clientAvatar: 'S',
@@ -62,19 +62,31 @@ export default function Sites({ onSelectSite = () => {} }) {
       location: 'Tirunelveli',
       budget: '₹32,00,000',
       progress: 30,
-      status: 'Planning',
+      status: 'On Hold',
     },
     {
       id: '04',
-      code: 'KS-005',
+      code: 'CHN-08-2026-NB-04',
       name: 'Metro Apartment',
       client: 'Manikandan',
       clientAvatar: 'M',
       type: 'New Building',
       location: 'Chennai',
-      budget: '₹8,00,000',
+      budget: '₹18,00,000',
       progress: 60,
       status: 'Active',
+    },
+    {
+      id: '05',
+      code: 'TRY-05-2026-NB-05',
+      name: 'Sunshine Enclave',
+      client: 'Ganesh',
+      clientAvatar: 'G',
+      type: 'New Building',
+      location: 'Trichy',
+      budget: '₹28,00,000',
+      progress: 100,
+      status: 'Completed',
     },
   ]);
 
@@ -91,10 +103,8 @@ export default function Sites({ onSelectSite = () => {} }) {
     setSites(sites.filter((site) => site.id !== id));
   };
 
-  // Filtered sites (Completed sites excluded from this page)
+  // Filtered sites by Search, Location, Type, and the 3 Site Statuses
   const filteredSites = sites.filter((site) => {
-    if (site.status === 'Completed') return false;
-
     const matchesSearch =
       site.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       site.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -157,30 +167,36 @@ export default function Sites({ onSelectSite = () => {} }) {
             <HardHat size={26} />
           </div>
           <div>
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">12</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">Active Sites</div>
+            <div className="text-3xl font-extrabold text-emerald-950 tracking-tight">
+              {sites.filter((s) => s.status === 'Active').length}
+            </div>
+            <div className="text-xs text-slate-500 font-bold mt-0.5">Active Sites (Ongoing)</div>
           </div>
         </div>
 
-        {/* Planning */}
-        <div className="bg-[#fff6ec] rounded-2xl p-5 border border-amber-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
-          <div className="w-13 h-13 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-            <Clock size={26} />
+        {/* Completed Sites */}
+        <div className="bg-[#f0f7ff] rounded-2xl p-5 border border-blue-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
+          <div className="w-13 h-13 rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+            <CheckCircle2 size={26} />
           </div>
           <div>
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">5</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">Planning</div>
+            <div className="text-3xl font-extrabold text-blue-950 tracking-tight">
+              {sites.filter((s) => s.status === 'Completed').length}
+            </div>
+            <div className="text-xs text-slate-500 font-bold mt-0.5">Completed Sites (Finished)</div>
           </div>
         </div>
 
         {/* On Hold */}
-        <div className="bg-[#f4f0ff] rounded-2xl p-5 border border-purple-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
-          <div className="w-13 h-13 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 size={26} />
+        <div className="bg-[#fff9eb] rounded-2xl p-5 border border-amber-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
+          <div className="w-13 h-13 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+            <Clock size={26} />
           </div>
           <div>
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">2</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">On Hold</div>
+            <div className="text-3xl font-extrabold text-amber-950 tracking-tight">
+              {sites.filter((s) => s.status === 'On Hold').length}
+            </div>
+            <div className="text-xs text-slate-500 font-bold mt-0.5">On Hold (Stopped)</div>
           </div>
         </div>
       </div>
@@ -194,7 +210,7 @@ export default function Sites({ onSelectSite = () => {} }) {
           </div>
           <input
             type="text"
-            placeholder="Search by site name or client..."
+            placeholder="Search by site name, client, or code..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-xs"
@@ -235,17 +251,17 @@ export default function Sites({ onSelectSite = () => {} }) {
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
 
-          {/* Status Filter */}
+          {/* Status Filter (Active, Completed, On Hold) */}
           <div className="relative">
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs cursor-pointer"
+              className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs cursor-pointer"
             >
               <option value="All Status">All Status</option>
-              <option value="Active">Active</option>
-              <option value="Planning">Planning</option>
-              <option value="On Hold">On Hold</option>
+              <option value="Active">Active (Ongoing)</option>
+              <option value="Completed">Completed (Finished)</option>
+              <option value="On Hold">On Hold (Stopped)</option>
             </select>
             <TrendingUp size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -349,24 +365,24 @@ export default function Sites({ onSelectSite = () => {} }) {
                     </div>
                   </td>
 
-                  {/* Status */}
+                  {/* Status (Active, Completed, On Hold) */}
                   <td className="py-4 px-4 text-center">
                     {site.status === 'Active' && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200/60">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                         <span>Active</span>
                       </span>
                     )}
                     {site.status === 'Completed' && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-600 border border-purple-200/60">
-                        <CheckCircle2 size={12} />
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-blue-50 text-blue-800 border border-blue-300">
+                        <CheckCircle2 size={12} className="text-blue-600" />
                         <span>Completed</span>
                       </span>
                     )}
-                    {site.status === 'Planning' && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200/60">
-                        <Clock size={12} />
-                        <span>Planning</span>
+                    {site.status === 'On Hold' && (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold bg-amber-50 text-amber-800 border border-amber-300">
+                        <Clock size={12} className="text-amber-600" />
+                        <span>On Hold</span>
                       </span>
                     )}
                   </td>

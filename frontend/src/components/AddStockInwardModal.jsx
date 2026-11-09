@@ -16,6 +16,7 @@ export default function AddStockInwardModal({
   onSaveInward,
   materials = [],
   categories = [],
+  initialMaterial = null,
 }) {
   const [formData, setFormData] = useState({
     materialName: '',
@@ -28,18 +29,31 @@ export default function AddStockInwardModal({
     remarks: '',
   });
 
-  // Set default material on open
+  // Set pre-selected or default material on open
   useEffect(() => {
-    if (materials.length > 0 && !formData.materialName) {
-      const first = materials[0];
-      setFormData((prev) => ({
-        ...prev,
-        materialName: first.name,
-        category: first.category,
-        unit: first.unit,
-      }));
+    if (isOpen) {
+      if (initialMaterial) {
+        setFormData({
+          materialName: initialMaterial.name,
+          isNewMaterial: false,
+          newMaterialName: '',
+          category: initialMaterial.category,
+          date: new Date().toISOString().split('T')[0],
+          quantity: '',
+          unit: initialMaterial.unit,
+          remarks: '',
+        });
+      } else if (materials.length > 0 && !formData.materialName) {
+        const first = materials[0];
+        setFormData((prev) => ({
+          ...prev,
+          materialName: first.name,
+          category: first.category,
+          unit: first.unit,
+        }));
+      }
     }
-  }, [materials, isOpen]);
+  }, [materials, isOpen, initialMaterial]);
 
   if (!isOpen) return null;
 

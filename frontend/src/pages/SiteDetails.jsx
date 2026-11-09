@@ -139,10 +139,24 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                 <h1 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight">
                   {currentSite.name}
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200/70">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>{currentSite.status}</span>
-                </span>
+                {currentSite.status === 'Active' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>Active</span>
+                  </span>
+                )}
+                {currentSite.status === 'Completed' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-blue-50 text-blue-800 border border-blue-300">
+                    <CheckCircle2 size={12} className="text-blue-600" />
+                    <span>Completed</span>
+                  </span>
+                )}
+                {currentSite.status === 'On Hold' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-50 text-amber-800 border border-amber-300">
+                    <Clock size={12} className="text-amber-600" />
+                    <span>On Hold</span>
+                  </span>
+                )}
               </div>
               <div className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2">
                 <span>{currentSite.code}</span>

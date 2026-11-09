@@ -25,6 +25,12 @@ import {
   Paintbrush,
   Hammer,
   Zap,
+  MapPin,
+  CreditCard,
+  FileText,
+  X,
+  ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import AddLabourModal from '../components/AddLabourModal';
 import { LABOUR_WORKER_TYPES } from '../constants/constructionData';
@@ -35,14 +41,15 @@ export default function Labour() {
   const [selectedSite, setSelectedSite] = useState('All Sites');
   const [selectedType, setSelectedType] = useState('All Labour Types');
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'grid'
+  const [viewingLabour, setViewingLabour] = useState(null); // 'View Labour details' Modal
 
-  // Initial Labour Workers Data
+  // Initial Labour Workers Data with Address, Aadhaar, PAN, and wage rates
   const [labourList, setLabourList] = useState([
     {
       id: '01',
       name: 'Kumar M',
       phone: '+91 98765 43210',
-      avatar: 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=120&q=80',
+      avatar: 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80',
       type: 'Mason',
       typeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
       typeIcon: Wrench,
@@ -52,12 +59,15 @@ export default function Labour() {
       otRate: '₹100',
       joiningDate: '10 Jun 2026',
       status: 'Active',
+      address: '24/1, Gandhi Nagar 2nd St, Velachery, Chennai - 600042',
+      aadhaarNumber: '7842 9012 3456',
+      panNumber: 'BKMPK4521G',
     },
     {
       id: '02',
       name: 'Ravi S',
       phone: '+91 98432 76540',
-      avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=120&q=80',
+      avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=200&q=80',
       type: 'Helper',
       typeColor: 'bg-sky-50 text-sky-700 border-sky-200/80',
       typeIcon: Wrench,
@@ -67,12 +77,15 @@ export default function Labour() {
       otRate: '₹80',
       joiningDate: '12 Jun 2026',
       status: 'Active',
+      address: '12, West Masi Street, Madurai - 625001',
+      aadhaarNumber: '4521 8901 2345',
+      panNumber: 'AVPPR8912K',
     },
     {
       id: '03',
       name: 'Mani K',
       phone: '+91 97890 12345',
-      avatar: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=120&q=80',
+      avatar: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=200&q=80',
       type: 'Painter',
       typeColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
       typeIcon: Paintbrush,
@@ -82,12 +95,15 @@ export default function Labour() {
       otRate: '₹100',
       joiningDate: '15 Jun 2026',
       status: 'Active',
+      address: '89, Anna Salai, Tambaram, Chennai - 600045',
+      aadhaarNumber: '9012 3456 7812',
+      panNumber: 'CFRPM7712E',
     },
     {
       id: '04',
       name: 'Suresh P',
       phone: '+91 96554 78901',
-      avatar: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=120&q=80',
+      avatar: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=200&q=80',
       type: 'Carpenter',
       typeColor: 'bg-amber-50 text-amber-800 border-amber-200/80',
       typeIcon: Hammer,
@@ -97,6 +113,9 @@ export default function Labour() {
       otRate: '₹150',
       joiningDate: '18 Jun 2026',
       status: 'On Site',
+      address: '15/4, High Ground Road, Palayamkottai, Tirunelveli - 627002',
+      aadhaarNumber: '3412 7890 1234',
+      panNumber: 'DFXPS1190B',
     },
     {
       id: '05',
@@ -448,7 +467,8 @@ export default function Labour() {
                     <div className="flex items-center justify-center gap-1.5">
                       <button
                         title="View Details"
-                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50/50 transition-colors"
+                        onClick={() => setViewingLabour(worker)}
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50/50 transition-colors cursor-pointer"
                       >
                         <Eye size={13} />
                       </button>
@@ -515,6 +535,169 @@ export default function Labour() {
         onClose={() => setIsModalOpen(false)}
         onAddLabour={handleAddLabour}
       />
+
+      {/* View Labour Details Modal */}
+      {viewingLabour && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
+          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-slate-50/70">
+              <div className="flex items-center gap-3.5">
+                <img
+                  src={viewingLabour.avatar}
+                  alt={viewingLabour.name}
+                  className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500/30 shadow-sm"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src =
+                      'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80';
+                  }}
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-extrabold text-slate-900">
+                      {viewingLabour.name}
+                    </h2>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                        viewingLabour.status === 'Active'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
+                    >
+                      {viewingLabour.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Worker ID: #{viewingLabour.id} &bull; {viewingLabour.type}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingLabour(null)}
+                className="w-8 h-8 rounded-full bg-white hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Profile Details Content */}
+            <div className="p-6 space-y-5">
+              {/* Contact & Location */}
+              <div>
+                <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                  Contact & Address
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                      <Phone size={12} className="text-emerald-600" />
+                      Phone Number
+                    </span>
+                    <div className="text-xs font-extrabold text-slate-900 mt-1">
+                      {viewingLabour.phone}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                      <Building2 size={12} className="text-blue-600" />
+                      Assigned Site
+                    </span>
+                    <div className="text-xs font-extrabold text-slate-900 mt-1">
+                      {viewingLabour.siteName} ({viewingLabour.siteCode})
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-2 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                      <MapPin size={12} className="text-rose-500" />
+                      Residential Address
+                    </span>
+                    <div className="text-xs font-semibold text-slate-800 mt-1">
+                      {viewingLabour.address || 'Chennai, Tamil Nadu'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* KYC & Identity Verification */}
+              <div>
+                <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                  KYC & Identification Details
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                      <CreditCard size={12} className="text-indigo-600" />
+                      Aadhaar Number
+                    </span>
+                    <div className="text-xs font-mono font-bold text-slate-900 mt-1">
+                      {viewingLabour.aadhaarNumber || 'Not provided'}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1.5">
+                      <FileText size={12} className="text-amber-600" />
+                      PAN Number
+                    </span>
+                    <div className="text-xs font-mono font-bold text-slate-900 mt-1">
+                      {viewingLabour.panNumber || 'Not provided'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Wage & Deployment */}
+              <div>
+                <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                  Wage Rates & Enrollment
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                      Daily Wage
+                    </span>
+                    <div className="text-sm font-black text-emerald-900 mt-0.5">
+                      {viewingLabour.dailyWage}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-sky-50/70 border border-sky-200/80">
+                    <span className="text-[10px] font-bold text-sky-800 uppercase">
+                      OT Rate
+                    </span>
+                    <div className="text-sm font-black text-sky-900 mt-0.5">
+                      {viewingLabour.otRate}{' '}
+                      <span className="text-[10px] font-semibold">/hr</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      Joined On
+                    </span>
+                    <div className="text-xs font-bold text-slate-900 mt-0.5">
+                      {viewingLabour.joiningDate}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50/70 border-t border-slate-100 flex items-center justify-end">
+              <button
+                onClick={() => setViewingLabour(null)}
+                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

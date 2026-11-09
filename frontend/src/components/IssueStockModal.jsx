@@ -17,6 +17,7 @@ export default function IssueStockModal({
   onClose,
   onIssueStock,
   materials = [],
+  initialMaterial = null,
   sites = [
     { code: 'KS-001', name: 'Green Villa', location: 'Chennai' },
     { code: 'KS-002', name: 'Office Renovation', location: 'Madurai' },
@@ -37,17 +38,16 @@ export default function IssueStockModal({
     materials.find((m) => m.name === selectedMaterialName) || materials[0] || null;
 
   useEffect(() => {
-    if (materials.length > 0 && !selectedMaterialName) {
-      setSelectedMaterialName(materials[0].name);
-    }
-  }, [materials, isOpen]);
-
-  useEffect(() => {
     if (isOpen) {
+      if (initialMaterial) {
+        setSelectedMaterialName(initialMaterial.name);
+      } else if (materials.length > 0 && !selectedMaterialName) {
+        setSelectedMaterialName(materials[0].name);
+      }
       setErrorMsg('');
       setQuantity('');
     }
-  }, [isOpen]);
+  }, [materials, isOpen, initialMaterial]);
 
   if (!isOpen) return null;
 

@@ -81,12 +81,17 @@ const createDefaultRow = (materialName) => {
   };
 };
 
-export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
+export default function AddExpenseModal({
+  isOpen,
+  onClose,
+  onAddExpense,
+  lockedSite = null,
+}) {
   const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     category: 'Materials',
     materialName: 'Cement',
-    site: 'Green Villa (KS-001)',
+    site: lockedSite || 'Green Villa (KS-001)',
     date: '2026-11-01',
     description: 'Cement - 50 Bags',
     supplier: 'SM Traders',
@@ -103,6 +108,13 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
     transactionId: '',
     notes: '',
   });
+
+  // Sync locked site if provided
+  useEffect(() => {
+    if (lockedSite) {
+      setFormData((prev) => ({ ...prev, site: lockedSite }));
+    }
+  }, [lockedSite, isOpen]);
 
   // Dynamic Material Details Table rows
   const [materialItems, setMaterialItems] = useState([
@@ -370,25 +382,41 @@ export default function AddExpenseModal({ isOpen, onClose, onAddExpense }) {
                 </div>
               </div>
 
-              {/* Construction Site */}
+              {/* Construction Site (Locked when accessed from Site Detail Page) */}
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1.5">
                   Construction Site <span className="text-rose-500">*</span>
                 </label>
-                <div className="relative">
-                  <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                  <select
-                    value={formData.site}
-                    onChange={(e) => setFormData({ ...formData, site: e.target.value })}
-                    className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
-                  >
-                    <option value="Green Villa (KS-001)">Green Villa (KS-001)</option>
-                    <option value="Office Renovation (KS-002)">Office Renovation (KS-002)</option>
-                    <option value="RK Residence (KS-004)">RK Residence (KS-004)</option>
-                    <option value="Metro Apartment (KS-005)">Metro Apartment (KS-005)</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                </div>
+                {lockedSite ? (
+                  <div className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 shadow-2xs">
+                    <Building2 size={14} className="text-emerald-600 shrink-0" />
+                    <span className="truncate">{lockedSite}</span>
+                    <span className="ml-auto text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Locked
+                    </span>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Building2
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+                    />
+                    <select
+                      value={formData.site}
+                      onChange={(e) => setFormData({ ...formData, site: e.target.value })}
+                      className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
+                    >
+                      <option value="Green Villa (KS-001)">Green Villa (KS-001)</option>
+                      <option value="Office Renovation (KS-002)">Office Renovation (KS-002)</option>
+                      <option value="RK Residence (KS-004)">RK Residence (KS-004)</option>
+                      <option value="Metro Apartment (KS-005)">Metro Apartment (KS-005)</option>
+                    </select>
+                    <ChevronDown
+                      size={14}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Expense Date */}

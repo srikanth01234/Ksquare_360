@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Layers,
@@ -14,7 +14,29 @@ import {
   Calendar,
   IndianRupee,
   Plus,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
+
+// Structured Project Code Generator (e.g. CHN-11-2026-NB-01 or CHN-11-2026-RE-01)
+const generateStructuredProjectCode = (city = 'Chennai', projectType = 'New Building') => {
+  const cityMap = {
+    Chennai: 'CHN',
+    Madurai: 'MDU',
+    Tirunelveli: 'TNV',
+    Coimbatore: 'CBE',
+    Salem: 'SLM',
+    Trichy: 'TRY',
+  };
+  const cityCode = cityMap[city] || (city ? city.slice(0, 3).toUpperCase() : 'CHN');
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  // Strictly 'NB' for New Building or 'RE' for Renovation
+  const catCode = projectType === 'Renovation' ? 'RE' : 'NB';
+  const runningNumber = String(Math.floor(1 + Math.random() * 99)).padStart(2, '0');
+  return `${cityCode}-${month}-${year}-${catCode}-${runningNumber}`;
+};
 
 export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
   const [projectType, setProjectType] = useState('New Building');
@@ -25,13 +47,31 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
     contact: '',
     description: '',
     address: '',
-    city: '',
-    state: '',
+    city: 'Chennai',
+    state: 'Tamil Nadu',
     pincode: '',
-    startDate: '',
+    startDate: new Date().toISOString().split('T')[0],
     completionDate: '',
     budget: '',
+    status: 'Active', // 'Active' | 'Completed' | 'On Hold'
   });
+
+  // Auto-generate structured project code on modal open or when city/projectType changes
+  useEffect(() => {
+    if (isOpen) {
+      const autoCode = generateStructuredProjectCode(formData.city, projectType);
+      setFormData((prev) => ({
+        ...prev,
+        code: prev.code || autoCode,
+        status: prev.status || 'Active',
+      }));
+    }
+  }, [isOpen]);
+
+  const handleRegenerateCode = () => {
+    const freshCode = generateStructuredProjectCode(formData.city, projectType);
+    setFormData((prev) => ({ ...prev, code: freshCode }));
+  };
 
   if (!isOpen) return null;
 
@@ -39,16 +79,19 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
     e.preventDefault();
     if (!formData.name) return;
 
+    const finalCode =
+      formData.code || generateStructuredProjectCode(formData.city, projectType);
+
     const newSite = {
       id: Date.now().toString(),
-      code: formData.code || `KS-00${Math.floor(Math.random() * 90 + 10)}`,
+      code: finalCode,
       name: formData.name,
       client: formData.client || 'Client',
       type: projectType,
       location: formData.city || 'Chennai',
       budget: formData.budget ? `₹${formData.budget}` : '₹10,00,000',
-      progress: 0,
-      status: 'Planning',
+      progress: formData.status === 'Completed' ? 100 : formData.status === 'On Hold' ? 30 : 15,
+      status: formData.status || 'Active',
     };
 
     onAddSite(newSite);
@@ -176,16 +219,36 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Project Code <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. KB-001"
-                  value={formData.code}
-                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Project Code <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleRegenerateCode}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200"
+                    title="Auto-generate structured project code"
+                  >
+                    <RefreshCw size={10} />
+                    <span>Auto Generate</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. CHN-11-2026-N03-01"
+                    value={formData.code}
+                    onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-extrabold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.5 rounded">
+                    Auto
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Format: City-MM-YYYY-Category-RunningNo (e.g. CHN-11-2026-N03-01)
+                </p>
               </div>
 
               <div>
@@ -381,6 +444,24 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
                     onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
                     className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Site Status <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full appearance-none px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 pr-8"
+                  >
+                    <option value="Active">Active (Ongoing construction)</option>
+                    <option value="Completed">Completed (Work finished)</option>
+                    <option value="On Hold">On Hold (Temporarily stopped)</option>
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
               </div>
             </div>

@@ -11,6 +11,10 @@ import {
   Wrench,
   Clock,
   Briefcase,
+  MapPin,
+  CreditCard,
+  FileText,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { LABOUR_WORKER_TYPES } from '../constants/constructionData';
 
@@ -24,6 +28,10 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
     otRate: '100',
     joiningDate: '2026-06-10',
     status: 'Active',
+    address: '',
+    aadhaarNumber: '',
+    panNumber: '',
+    photo: '',
   });
 
   if (!isOpen) return null;
@@ -36,6 +44,16 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
     const siteName = siteParts[0] || 'Green Villa';
     const siteCode = siteParts[1] ? siteParts[1].replace(')', '') : 'KS-001';
 
+    const defaultAvatars = [
+      'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80',
+      'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=200&q=80',
+      'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=200&q=80',
+      'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=200&q=80',
+    ];
+    const finalAvatar =
+      formData.photo.trim() ||
+      defaultAvatars[Math.floor(Math.random() * defaultAvatars.length)];
+
     const newWorker = {
       id: Date.now().toString(),
       name: formData.name,
@@ -47,7 +65,10 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
       otRate: `₹${formData.otRate}`,
       joiningDate: formData.joiningDate,
       status: formData.status,
-      avatar: 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=150&q=80',
+      address: formData.address || 'Chennai, Tamil Nadu',
+      aadhaarNumber: formData.aadhaarNumber || '',
+      panNumber: formData.panNumber || '',
+      avatar: finalAvatar,
     };
 
     onAddLabour(newWorker);
@@ -66,20 +87,21 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
             <div>
               <h2 className="text-lg font-bold text-slate-900">Add New Labour</h2>
               <p className="text-xs text-slate-500">
-                Register a new worker with wage and site assignment details.
+                Register a new worker with wage, KYC details, address, and site assignment.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X size={16} />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+          {/* Row 1: Worker Name & Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -116,6 +138,7 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
             </div>
           </div>
 
+          {/* Row 2: Labour Type & Assigned Site */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -158,6 +181,94 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
             </div>
           </div>
 
+          {/* Row 3: Address (Requested) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Residential Address
+            </label>
+            <div className="relative">
+              <MapPin size={14} className="absolute left-3 top-3 text-slate-400" />
+              <textarea
+                rows={2}
+                placeholder="e.g. 14/2, Cross Street, Perumbakkam, Chennai - 600100"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 resize-none"
+              />
+            </div>
+          </div>
+
+          {/* Row 4: Aadhaar Number & PAN Number (Optional) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Aadhaar Number <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <div className="relative">
+                <CreditCard size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="e.g. 1234 5678 9012"
+                  value={formData.aadhaarNumber}
+                  onChange={(e) => setFormData({ ...formData, aadhaarNumber: e.target.value })}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                PAN Number <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <div className="relative">
+                <FileText size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="e.g. ABCDE1234F"
+                  value={formData.panNumber}
+                  onChange={(e) => setFormData({ ...formData, panNumber: e.target.value.toUpperCase() })}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 uppercase"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Row 5: Labour Photo */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Labour Photo URL <span className="text-slate-400 font-normal">(Optional / Auto-generates avatar)</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <ImageIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="https://... (or leave blank for standard worker avatar)"
+                  value={formData.photo}
+                  onChange={(e) => setFormData({ ...formData, photo: e.target.value })}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                />
+              </div>
+              <div className="w-10 h-10 rounded-full border border-slate-200 bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center">
+                {formData.photo ? (
+                  <img
+                    src={formData.photo}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src =
+                        'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=150&q=80';
+                    }}
+                  />
+                ) : (
+                  <HardHat size={18} className="text-slate-400" />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Row 6: Daily Wage, OT Rate, Joining Date */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -212,7 +323,7 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              className="px-5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
             >
               Cancel
             </button>

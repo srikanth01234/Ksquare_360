@@ -25,8 +25,12 @@ import {
 } from 'lucide-react';
 import AddStockInwardModal from '../components/AddStockInwardModal';
 import IssueStockModal from '../components/IssueStockModal';
+import { INITIAL_MATERIALS } from '../constants/materialsData';
 
-export default function Godown() {
+export default function Godown({
+  materials: externalMaterials,
+  setMaterials: externalSetMaterials,
+}) {
   const [activeTab, setActiveTab] = useState('inventory'); // 'inventory' | 'movements'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -45,174 +49,22 @@ export default function Godown() {
     { code: 'KS-005', name: 'Metro Apartment', location: 'Chennai' },
   ];
 
-  // Core Materials Inventory (Construction Materials)
-  const [inventory, setInventory] = useState([
-    {
-      id: 'GD-MAT-001',
-      name: 'Cement',
-      category: 'Cement',
-      unit: 'Bags',
-      totalPurchased: 500,
-      totalIssued: 150,
-      availableQuantity: 350,
-      minStockLevel: 50,
-      iconType: 'package',
-    },
-    {
-      id: 'GD-MAT-002',
-      name: 'M-Sand',
-      category: 'Sand',
-      unit: 'Tons',
-      totalPurchased: 120,
-      totalIssued: 85,
-      availableQuantity: 35,
-      minStockLevel: 10,
-      iconType: 'layers',
-    },
-    {
-      id: 'GD-MAT-003',
-      name: 'P-Sand',
-      category: 'Sand',
-      unit: 'Tons',
-      totalPurchased: 80,
-      totalIssued: 52,
-      availableQuantity: 28,
-      minStockLevel: 10,
-      iconType: 'layers',
-    },
-    {
-      id: 'GD-MAT-004',
-      name: '20 mm Blue Metal',
-      category: 'Aggregates',
-      unit: 'Tons',
-      totalPurchased: 95,
-      totalIssued: 60,
-      availableQuantity: 35,
-      minStockLevel: 15,
-      iconType: 'box',
-    },
-    {
-      id: 'GD-MAT-005',
-      name: '40 mm Blue Metal',
-      category: 'Aggregates',
-      unit: 'Tons',
-      totalPurchased: 60,
-      totalIssued: 42,
-      availableQuantity: 18,
-      minStockLevel: 10,
-      iconType: 'box',
-    },
-    {
-      id: 'GD-MAT-006',
-      name: 'Steel',
-      category: 'Steel',
-      unit: 'Kg',
-      totalPurchased: 8500,
-      totalIssued: 5200,
-      availableQuantity: 3300,
-      minStockLevel: 1000,
-      iconType: 'wrench',
-    },
-    {
-      id: 'GD-MAT-007',
-      name: 'Rings',
-      category: 'Steel',
-      unit: 'Kg',
-      totalPurchased: 1200,
-      totalIssued: 750,
-      availableQuantity: 450,
-      minStockLevel: 150,
-      iconType: 'wrench',
-    },
-    {
-      id: 'GD-MAT-008',
-      name: 'Chamber Bricks',
-      category: 'Bricks',
-      unit: 'Pieces',
-      totalPurchased: 15000,
-      totalIssued: 9500,
-      availableQuantity: 5500,
-      minStockLevel: 2000,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-009',
-      name: 'Fly Ash Bricks',
-      category: 'Bricks',
-      unit: 'Pieces',
-      totalPurchased: 10000,
-      totalIssued: 6200,
-      availableQuantity: 3800,
-      minStockLevel: 1500,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-010',
-      name: 'Solid Block – 6 Inch',
-      category: 'Blocks',
-      unit: 'Pieces',
-      totalPurchased: 4500,
-      totalIssued: 3100,
-      availableQuantity: 1400,
-      minStockLevel: 500,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-011',
-      name: 'Solid Block – 4 Inch',
-      category: 'Blocks',
-      unit: 'Pieces',
-      totalPurchased: 3000,
-      totalIssued: 1800,
-      availableQuantity: 1200,
-      minStockLevel: 500,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-012',
-      name: 'Chengal Brick (Red Brick)',
-      category: 'Bricks',
-      unit: 'Pieces',
-      totalPurchased: 12000,
-      totalIssued: 8000,
-      availableQuantity: 4000,
-      minStockLevel: 2000,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-013',
-      name: 'Cement Brick',
-      category: 'Bricks',
-      unit: 'Pieces',
-      totalPurchased: 5000,
-      totalIssued: 3500,
-      availableQuantity: 1500,
-      minStockLevel: 800,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-014',
-      name: 'AAC Block',
-      category: 'Blocks',
-      unit: 'Pieces',
-      totalPurchased: 2500,
-      totalIssued: 1600,
-      availableQuantity: 900,
-      minStockLevel: 300,
-      iconType: 'grid',
-    },
-    {
-      id: 'GD-MAT-015',
-      name: 'AAC Paste',
-      category: 'Paste',
-      unit: 'Bags',
-      totalPurchased: 150,
-      totalIssued: 90,
-      availableQuantity: 60,
-      minStockLevel: 20,
-      iconType: 'package',
-    },
-  ]);
+  // Core Materials Inventory (Directly Connected with Master Data)
+  const [internalMaterials, setInternalMaterials] = useState(INITIAL_MATERIALS);
+  const rawMaterials = externalMaterials || internalMaterials;
+  const setRawMaterials = externalSetMaterials || setInternalMaterials;
+
+  // Normalized inventory ensuring availableQuantity, stock, and minStockLevel are always synchronized
+  const inventory = useMemo(() => {
+    return rawMaterials.map((m) => ({
+      ...m,
+      availableQuantity: m.availableQuantity ?? m.stock ?? 0,
+      stock: m.stock ?? m.availableQuantity ?? 0,
+      minStockLevel: m.minStockLevel ?? m.minStock ?? 10,
+      totalPurchased: m.totalPurchased ?? ((m.stock || 0) + 100),
+      totalIssued: m.totalIssued ?? 50,
+    }));
+  }, [rawMaterials]);
 
   // Live Recent Stock Movements History (Inward & Outward Site Dispatches)
   const [recentMovements, setRecentMovements] = useState([
@@ -346,37 +198,49 @@ export default function Godown() {
     });
   }, [inventory, searchQuery, selectedCategory, selectedStatus]);
 
-  // Save Inward Stock
+  // Save Inward Stock (Updates Master Material Stock & Logs Movement)
   const handleSaveInward = (inwardData) => {
-    const existingIndex = inventory.findIndex(
+    const existingIndex = rawMaterials.findIndex(
       (m) => m.name.toLowerCase() === inwardData.materialName.toLowerCase()
     );
 
-    if (existingIndex >= 0) {
-      const updated = [...inventory];
-      const existing = updated[existingIndex];
-      const newPurchased = existing.totalPurchased + inwardData.quantity;
-      const newAvailable = existing.availableQuantity + inwardData.quantity;
+    const addQty = parseFloat(inwardData.quantity) || 0;
 
-      updated[existingIndex] = {
-        ...existing,
-        totalPurchased: newPurchased,
-        availableQuantity: newAvailable,
-      };
-      setInventory(updated);
+    if (existingIndex >= 0) {
+      setRawMaterials((prev) => {
+        const updated = [...prev];
+        const existing = updated[existingIndex];
+        const currentQty = existing.availableQuantity ?? existing.stock ?? 0;
+        const newPurchased = (existing.totalPurchased || 0) + addQty;
+        const newAvailable = currentQty + addQty;
+
+        updated[existingIndex] = {
+          ...existing,
+          totalPurchased: newPurchased,
+          availableQuantity: newAvailable,
+          stock: newAvailable,
+        };
+        return updated;
+      });
     } else {
       const newMat = {
-        id: `GD-MAT-${String(inventory.length + 1).padStart(3, '0')}`,
+        id: `MAT-${Date.now().toString().slice(-4)}`,
         name: inwardData.materialName,
         category: inwardData.category || 'General',
-        unit: inwardData.unit || 'Nos',
-        totalPurchased: inwardData.quantity,
+        unit: inwardData.unit || 'Bags',
+        price: inwardData.price || 0,
+        totalPurchased: addQty,
         totalIssued: 0,
-        availableQuantity: inwardData.quantity,
+        availableQuantity: addQty,
+        stock: addQty,
         minStockLevel: inwardData.minStockLevel || 10,
-        iconType: 'package',
+        minStock: inwardData.minStockLevel || 10,
+        status: 'Active',
+        image:
+          'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
+        description: 'New stock added directly via Godown inward.',
       };
-      setInventory([newMat, ...inventory]);
+      setRawMaterials((prev) => [newMat, ...prev]);
     }
 
     // Append to live movements log
@@ -385,7 +249,7 @@ export default function Godown() {
       type: 'INWARD',
       materialName: inwardData.materialName,
       category: inwardData.category || 'General',
-      quantity: inwardData.quantity,
+      quantity: addQty,
       unit: inwardData.unit || 'Units',
       siteName: 'Main Yard Godown',
       date: inwardData.date || new Date().toISOString().split('T')[0],
@@ -395,24 +259,30 @@ export default function Godown() {
     setRecentMovements((prev) => [newMovement, ...prev]);
   };
 
-  // Issue Stock to Site
+  // Issue Stock to Site (Reduces Godown Stock & Logs Outward Movement)
   const handleIssueStock = (issueData) => {
-    const existingIndex = inventory.findIndex(
+    const existingIndex = rawMaterials.findIndex(
       (m) => m.name.toLowerCase() === issueData.materialName.toLowerCase()
     );
 
-    if (existingIndex >= 0) {
-      const updated = [...inventory];
-      const existing = updated[existingIndex];
-      const newIssued = existing.totalIssued + issueData.quantity;
-      const newAvailable = Math.max(0, existing.availableQuantity - issueData.quantity);
+    const issueQty = parseFloat(issueData.quantity) || 0;
 
-      updated[existingIndex] = {
-        ...existing,
-        totalIssued: newIssued,
-        availableQuantity: newAvailable,
-      };
-      setInventory(updated);
+    if (existingIndex >= 0) {
+      setRawMaterials((prev) => {
+        const updated = [...prev];
+        const existing = updated[existingIndex];
+        const currentQty = existing.availableQuantity ?? existing.stock ?? 0;
+        const newIssued = (existing.totalIssued || 0) + issueQty;
+        const newAvailable = Math.max(0, currentQty - issueQty);
+
+        updated[existingIndex] = {
+          ...existing,
+          totalIssued: newIssued,
+          availableQuantity: newAvailable,
+          stock: newAvailable,
+        };
+        return updated;
+      });
     }
 
     // Append to live movements log
@@ -421,7 +291,7 @@ export default function Godown() {
       type: 'OUTWARD',
       materialName: issueData.materialName,
       category: issueData.category || 'General',
-      quantity: issueData.quantity,
+      quantity: issueQty,
       unit: issueData.unit || 'Units',
       siteName: issueData.siteName || issueData.projectLabel || 'Site',
       date: issueData.date || new Date().toISOString().split('T')[0],
@@ -431,64 +301,120 @@ export default function Godown() {
     setRecentMovements((prev) => [newMovement, ...prev]);
   };
 
-  // Render individual card (ONLY Material Name and Current Stock)
+  // Render individual card: Full background image + hover reveals Inward & Outward buttons
   const renderStockCard = (item) => {
-    const status = getStockStatus(item.availableQuantity, item.minStockLevel);
+    const currentQty = item.availableQuantity ?? item.stock ?? 0;
+    const minLevel = item.minStockLevel ?? item.minStock ?? 10;
+    const status = getStockStatus(currentQty, minLevel);
+
     return (
       <div
         key={item.id}
-        className="bg-white rounded-2xl border border-slate-200 hover:border-slate-300 p-3.5 flex items-center justify-between gap-3 shadow-2xs hover:shadow-xs transition-all group"
+        className="relative overflow-hidden rounded-2xl min-h-[155px] flex flex-col justify-between p-4 group border border-slate-700/40 shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-900"
       >
-        {/* Left: Material Icon & Name */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-200/80 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-            {renderMaterialIcon(item.category, item.iconType)}
-          </div>
-          <div className="min-w-0">
-            <h3
-              className="font-bold text-slate-900 text-xs md:text-sm truncate"
-              title={item.name}
+        {/* Full Image Background */}
+        <img
+          src={item.image}
+          alt={item.name}
+          className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-500 ease-out"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src =
+              'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80';
+          }}
+        />
+
+        {/* Gradient Overlay for high-contrast text */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/65 to-slate-950/45 group-hover:from-slate-950/98 group-hover:via-slate-950/80 transition-all duration-300 pointer-events-none" />
+
+        {/* Top Badges */}
+        <div className="relative z-10 flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md text-white border border-white/20 shadow-xs">
+            {item.category}
+          </span>
+          <span
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold backdrop-blur-md shadow-xs ${
+              item.status === 'Inactive'
+                ? 'bg-rose-950/85 text-rose-300 border border-rose-500/40'
+                : status === 'In Stock'
+                ? 'bg-emerald-950/85 text-emerald-300 border border-emerald-500/40'
+                : status === 'Low Stock'
+                ? 'bg-amber-950/85 text-amber-300 border border-amber-500/40'
+                : 'bg-rose-950/85 text-rose-300 border border-rose-500/40'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                item.status === 'Inactive'
+                  ? 'bg-rose-400'
+                  : status === 'In Stock'
+                  ? 'bg-emerald-400'
+                  : status === 'Low Stock'
+                  ? 'bg-amber-400'
+                  : 'bg-rose-400'
+              }`}
+            />
+            {item.status === 'Inactive' ? 'Inactive' : status === 'In Stock' ? 'Available' : status}
+          </span>
+        </div>
+
+        {/* Bottom Info: Material Name & Current Stock ONLY */}
+        <div className="relative z-10 pt-4">
+          <h3
+            className="text-white font-extrabold text-sm md:text-base tracking-tight truncate drop-shadow-sm"
+            title={item.name}
+          >
+            {item.name}
+          </h3>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
+              Current Stock
+            </span>
+            <span
+              className={`text-sm md:text-base font-black ${
+                currentQty > 0 ? 'text-emerald-300' : 'text-rose-400'
+              }`}
             >
-              {item.name}
-            </h3>
-            <span className="inline-block text-[10px] font-bold text-slate-600 mt-0.5">
-              {item.category}
+              {currentQty.toLocaleString('en-IN')}{' '}
+              <span className="text-xs font-bold text-slate-200">{item.unit}</span>
             </span>
           </div>
         </div>
 
-        {/* Right: ONLY Current Stock Quantity */}
-        <div className="text-right shrink-0">
-          <div className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider leading-tight">
-            STOCK
-          </div>
-          <div
-            className={`text-sm md:text-base font-black leading-snug ${
-              item.availableQuantity > 0 ? 'text-emerald-700' : 'text-rose-600'
-            }`}
-          >
-            {item.availableQuantity.toLocaleString('en-IN')}{' '}
-            <span className="text-xs font-bold text-slate-700">{item.unit}</span>
-          </div>
-          <div className="mt-0.5">
-            {status === 'In Stock' && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-700" />
-                Available
-              </span>
-            )}
-            {status === 'Low Stock' && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-700" />
-                Low Stock
-              </span>
-            )}
-            {status === 'Out of Stock' && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-700" />
-                Nil Stock
-              </span>
-            )}
+        {/* Hover Action Overlay: Inward & Outward Buttons */}
+        <div className="absolute inset-0 z-20 bg-slate-950/88 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-all duration-200 flex flex-col items-center justify-center gap-2 p-3">
+          <span className="text-xs font-extrabold text-white text-center truncate max-w-full px-1">
+            {item.name}
+          </span>
+          <div className="flex items-center gap-2 w-full justify-center">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedMaterialForAction(item);
+                setIsInwardModalOpen(true);
+              }}
+              disabled={item.status === 'Inactive'}
+              className="flex-1 max-w-[110px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none text-white text-[11px] font-extrabold shadow-lg transition-transform active:scale-95 cursor-pointer"
+              title="Stock Inward"
+            >
+              <ArrowDownLeft size={14} />
+              <span>+ Inward</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedMaterialForAction(item);
+                setIsIssueModalOpen(true);
+              }}
+              disabled={item.status === 'Inactive' || currentQty <= 0}
+              className="flex-1 max-w-[110px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white text-[11px] font-extrabold shadow-lg transition-transform active:scale-95 cursor-pointer"
+              title="Issue Stock (Outward)"
+            >
+              <ArrowUpRight size={14} />
+              <span>→ Issue</span>
+            </button>
           </div>
         </div>
       </div>
@@ -830,16 +756,36 @@ export default function Godown() {
                             {idx + 1}
                           </td>
 
-                          {/* Material Name with Icon */}
+                          {/* Material Name with Photo */}
                           <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-200/60 flex items-center justify-center shrink-0">
-                                {renderMaterialIcon(item.category, item.iconType)}
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 shadow-2xs">
+                                {item.image ? (
+                                  <img
+                                    src={item.image}
+                                    alt={item.name}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src =
+                                        'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-blue-50 text-blue-600">
+                                    {renderMaterialIcon(item.category, item.iconType)}
+                                  </div>
+                                )}
                               </div>
                               <div>
-                                <span className="font-extrabold text-slate-900 text-xs md:text-sm">
+                                <span className="font-extrabold text-slate-900 text-xs md:text-sm block">
                                   {item.name}
                                 </span>
+                                {item.status === 'Inactive' && (
+                                  <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 px-1 rounded border border-rose-200 inline-block mt-0.5">
+                                    Discontinued
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -1037,7 +983,7 @@ export default function Godown() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Modals - Passing only Active materials for new stock operations */}
       <AddStockInwardModal
         isOpen={isInwardModalOpen}
         onClose={() => {
@@ -1045,7 +991,8 @@ export default function Godown() {
           setSelectedMaterialForAction(null);
         }}
         onSaveInward={handleSaveInward}
-        materials={inventory}
+        initialMaterial={selectedMaterialForAction}
+        materials={inventory.filter((m) => m.status !== 'Inactive')}
         categories={categories}
       />
 
@@ -1056,7 +1003,8 @@ export default function Godown() {
           setSelectedMaterialForAction(null);
         }}
         onIssueStock={handleIssueStock}
-        materials={inventory}
+        initialMaterial={selectedMaterialForAction}
+        materials={inventory.filter((m) => m.status !== 'Inactive')}
         sites={sites}
       />
     </div>
