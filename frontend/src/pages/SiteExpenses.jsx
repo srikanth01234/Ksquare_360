@@ -29,6 +29,7 @@ import {
   Clock,
   AlertCircle,
   FileSpreadsheet,
+  Zap,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
 
@@ -47,6 +48,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
     { id: 'Labour', label: 'Labour', icon: Users },
     { id: 'Rent', label: 'Rent', icon: Building2 },
     { id: 'Vehicle Rent', label: 'Vehicle Rent', icon: Truck },
+    { id: 'Additional Work', label: 'Additional Work', icon: Zap },
     { id: 'Other Expenses', label: 'Other Expenses', icon: MoreHorizontal },
   ];
 
@@ -117,6 +119,19 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
       amount: '₹1,200',
       paymentStatus: 'Partial',
     },
+    {
+      id: '06',
+      date: '28 Oct 2026',
+      siteName: 'Green Villa',
+      siteCode: 'KS-001',
+      category: 'Additional Work',
+      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
+      categoryIcon: Zap,
+      description: 'Parapet wall 2ft extension & plastering',
+      supplier: 'Ravi Mason Contractors',
+      amount: '₹35,000',
+      paymentStatus: 'Paid',
+    },
   ]);
 
   const handleAddExpense = (newExp) => {
@@ -128,12 +143,14 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
           ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
           : newExp.category === 'Labour'
           ? 'bg-sky-50 text-sky-700 border-sky-200/80'
+          : newExp.category === 'Additional Work'
+          ? 'bg-purple-50 text-purple-700 border-purple-200/80'
           : newExp.category === 'Vehicle Rent'
           ? 'bg-purple-50 text-purple-700 border-purple-200/80'
           : newExp.category === 'Rent'
           ? 'bg-amber-50 text-amber-800 border-amber-200/80'
           : 'bg-slate-100 text-slate-700 border-slate-200',
-      categoryIcon: Layers,
+      categoryIcon: newExp.category === 'Additional Work' ? Zap : Layers,
     };
     setExpenses([formatted, ...expenses]);
   };
@@ -215,7 +232,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
             <div>
               <div className="text-xs text-slate-500 font-medium">Total Expenses</div>
               <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-                ₹24,86,000
+                ₹8,45,000
               </div>
             </div>
           </div>
@@ -225,43 +242,58 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
           </div>
         </div>
 
-        {/* Material Expenses */}
-        <div className="bg-[#edf5ff] rounded-2xl p-5 border border-blue-100/80 shadow-xs flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
-            <Package size={22} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 font-medium">Material Expenses</div>
-            <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹16,40,000
+        {/* Paid Amount */}
+        <div className="bg-[#edf5ff] rounded-2xl p-5 border border-blue-100/80 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-medium">Paid Amount</div>
+              <div className="text-2xl font-extrabold text-emerald-700 tracking-tight mt-0.5">
+                ₹6,50,000
+              </div>
             </div>
           </div>
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+            77%
+          </span>
         </div>
 
-        {/* Labour Expenses */}
-        <div className="bg-[#fff7ee] rounded-2xl p-5 border border-amber-100/80 shadow-xs flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-            <Users size={22} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 font-medium">Labour Expenses</div>
-            <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹5,20,000
+        {/* Pending Amount */}
+        <div className="bg-[#fef2f2] rounded-2xl p-5 border border-rose-100/80 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
+              <Hourglass size={22} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-medium">Pending Amount</div>
+              <div className="text-2xl font-extrabold text-rose-600 tracking-tight mt-0.5">
+                ₹1,95,000
+              </div>
             </div>
           </div>
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
+            23%
+          </span>
         </div>
 
-        {/* Pending Payments */}
-        <div className="bg-[#fef2f2] rounded-2xl p-5 border border-rose-100/80 shadow-xs flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
-            <Hourglass size={22} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 font-medium">Pending Payments</div>
-            <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹1,36,000
+        {/* Additional Work Expenses */}
+        <div className="bg-[#f5f2ff] rounded-2xl p-5 border border-purple-100/80 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
+              <Zap size={22} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-medium">Additional Work Expenses</div>
+              <div className="text-2xl font-extrabold text-purple-700 tracking-tight mt-0.5">
+                ₹35,000
+              </div>
             </div>
           </div>
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+            Scope +
+          </span>
         </div>
       </div>
 
@@ -332,6 +364,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
               <option value="Labour">Labour</option>
               <option value="Vehicle Rent">Vehicle Rent</option>
               <option value="Rent">Rent</option>
+              <option value="Additional Work">Additional Work</option>
               <option value="Other">Other</option>
             </select>
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />

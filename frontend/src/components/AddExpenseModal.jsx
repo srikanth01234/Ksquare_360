@@ -376,6 +376,7 @@ export default function AddExpenseModal({
                     <option value="Materials">Materials</option>
                     <option value="Labour">Labour</option>
                     <option value="Rental">Rental</option>
+                    <option value="Additional Work">Additional Work</option>
                     <option value="Other">Other Expenses</option>
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />

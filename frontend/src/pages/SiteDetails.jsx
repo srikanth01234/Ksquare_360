@@ -24,6 +24,8 @@ import {
   ArrowUpRight,
   ShieldCheck,
   Coins,
+  Truck,
+  TrendingUp,
 } from 'lucide-react';
 
 export default function SiteDetails({ site = null, onBack = () => {} }) {
@@ -32,19 +34,32 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   // Active site data (defaults to Green Villa if none passed)
   const currentSite = site || {
     name: 'Green Villa',
-    code: 'KS-001',
+    code: 'CHN-11-2026-NB-01',
     type: 'New Building',
     status: 'Active',
     client: 'Arun Kumar',
     contact: '+91 98765 43210',
-    location: 'Chennai',
+    location: 'Chennai, TN',
     startDate: '10 Jun 2026',
     expectedDate: '30 Apr 2027',
-    estimatedBudget: '₹25,00,000',
-    totalSpent: '₹15,00,000',
-    balance: '₹10,00,000',
-    utilization: 60,
+    projectBudget: 2500000,
+    clientPaid: 1000000,
+    materialsExpense: 450000,
+    labourExpense: 275000,
+    rentalExpense: 120000,
   };
+
+  const materialsExpense = currentSite.materialsExpense ?? 450000;
+  const labourExpense = currentSite.labourExpense ?? 275000;
+  const rentalExpense = currentSite.rentalExpense ?? 120000;
+  const totalExpenses = materialsExpense + labourExpense + rentalExpense; // 8,45,000
+
+  const clientPaid = currentSite.clientPaid ?? 1000000; // 10,00,000
+  const excessAmount = clientPaid - totalExpenses; // 1,55,000 (Excess advance in hand)
+  const projectBudget = currentSite.projectBudget ?? 2500000;
+  const clientPending = projectBudget - clientPaid; // 15,00,000
+
+  const formatCurrency = (val) => '₹' + Number(val).toLocaleString('en-IN');
 
   const tabs = [
     { id: 'Overview', label: 'Overview', icon: Home },
@@ -126,13 +141,13 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         <span className="text-emerald-700 font-bold">{currentSite.name}</span>
       </nav>
 
-      {/* 2. Top Card (Reduced Length & Compact Height) */}
+      {/* 2. Top Banner Card (Clean, Spacious & Professional) */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col md:flex-row items-stretch justify-between">
         {/* Left Information */}
-        <div className="p-4 md:p-5 flex-1 flex flex-col justify-between space-y-3.5">
+        <div className="p-5 md:p-6 flex-1 flex flex-col justify-between space-y-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 border border-emerald-200/60 text-emerald-600 flex items-center justify-center shrink-0 shadow-xs">
-              <Building2 size={22} />
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200/60 text-emerald-600 flex items-center justify-center shrink-0 shadow-xs">
+              <Building2 size={24} />
             </div>
             <div>
               <div className="flex items-center gap-2.5">
@@ -158,8 +173,8 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                   </span>
                 )}
               </div>
-              <div className="text-xs text-slate-500 font-medium mt-0.5 flex items-center gap-2">
-                <span>{currentSite.code}</span>
+              <div className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-2">
+                <span className="font-semibold text-slate-700">{currentSite.code}</span>
                 <span className="text-slate-300">•</span>
                 <span>{currentSite.type}</span>
               </div>
@@ -167,7 +182,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
           </div>
 
           {/* Quick Details Chips */}
-          <div className="flex flex-wrap items-center gap-y-2 gap-x-5 text-xs text-slate-600 font-medium pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-slate-600 font-medium pt-3 border-t border-slate-100">
             <div className="flex items-center gap-1.5">
               <User size={13} className="text-slate-400" />
               <span>Client: <strong className="text-slate-800">{currentSite.client}</strong></span>
@@ -188,7 +203,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         </div>
 
         {/* Right Compact Image & Action Buttons */}
-        <div className="relative w-full md:w-80 h-32 md:h-auto bg-slate-100 shrink-0 overflow-hidden">
+        <div className="relative w-full md:w-80 h-36 md:h-auto bg-slate-100 shrink-0 overflow-hidden">
           <img
             src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80"
             alt="Modern Villa Architecture"
@@ -236,138 +251,151 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left / Center Main Content (8 cols) */}
         <div className="lg:col-span-8 space-y-5">
-          {/* Row 1: 4 Stat Cards */}
+          {/* Row 1: 4 Stat Cards - Materials, Labour, Rental, and Total Expenses */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            {/* Total Materials */}
+            {/* Total Material Amount */}
             <div className="bg-[#edf9f3] rounded-xl p-3.5 border border-emerald-100/80 shadow-xs flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
                 <Layers size={18} />
               </div>
               <div>
-                <div className="text-[11px] text-slate-500 font-medium">Total Materials</div>
-                <div className="text-xl font-bold text-slate-900 tracking-tight">18</div>
+                <div className="text-[11px] text-slate-500 font-medium">Materials</div>
+                <div className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{formatCurrency(materialsExpense)}</div>
               </div>
             </div>
 
-            {/* Assigned Labour */}
-            <div className="bg-[#fff7ee] rounded-xl p-3.5 border border-amber-100/80 shadow-xs flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+            {/* Assigned Labour Amount */}
+            <div className="bg-[#edf5ff] rounded-xl p-3.5 border border-blue-100/80 shadow-xs flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
                 <Users size={18} />
               </div>
               <div>
-                <div className="text-[11px] text-slate-500 font-medium">Assigned Labour</div>
-                <div className="text-xl font-bold text-slate-900 tracking-tight">12</div>
+                <div className="text-[11px] text-slate-500 font-medium">Labour</div>
+                <div className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{formatCurrency(labourExpense)}</div>
               </div>
             </div>
 
-            {/* Total Expenses */}
-            <div className="bg-[#edf5ff] rounded-xl p-3.5 border border-blue-100/80 shadow-xs flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+            {/* Rental Amount */}
+            <div className="bg-[#fff7ee] rounded-xl p-3.5 border border-amber-100/80 shadow-xs flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                <Truck size={18} />
+              </div>
+              <div>
+                <div className="text-[11px] text-slate-500 font-medium">Rental</div>
+                <div className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{formatCurrency(rentalExpense)}</div>
+              </div>
+            </div>
+
+            {/* Total Recorded Expenses */}
+            <div className="bg-[#f5f2ff] rounded-xl p-3.5 border border-purple-100/80 shadow-xs flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
                 <Wallet size={18} />
               </div>
               <div>
                 <div className="text-[11px] text-slate-500 font-medium">Total Expenses</div>
-                <div className="text-xl font-bold text-slate-900 tracking-tight">₹4.50 L</div>
-              </div>
-            </div>
-
-            {/* Pending Payments */}
-            <div className="bg-[#fef2f2] rounded-xl p-3.5 border border-rose-100/80 shadow-xs flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
-                <Receipt size={18} />
-              </div>
-              <div>
-                <div className="text-[11px] text-slate-500 font-medium">Pending Payments</div>
-                <div className="text-xl font-bold text-slate-900 tracking-tight">₹1.20 L</div>
+                <div className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{formatCurrency(totalExpenses)}</div>
               </div>
             </div>
           </div>
 
-          {/* Row 2: Project Budget (Neat, Simple, Modern UI - No Chart Diagram) */}
+          {/* Row 2: Client Payments & Cash Flow (Excess Amount in Hand) */}
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <Coins size={16} />
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-2xs">
+                  <Coins size={17} />
                 </div>
-                <h3 className="text-sm font-bold text-slate-900">Project Budget</h3>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Client Payments & Excess Balance</h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Tracking advance received from client vs actual site expenditure
+                  </p>
+                </div>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
-                60% Spent • On Track
+              <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
+                excessAmount >= 0
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                  : 'bg-rose-50 text-rose-800 border-rose-300'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${excessAmount >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <span>Excess in Hand: {formatCurrency(excessAmount)}</span>
               </span>
             </div>
 
             {/* 3 Clean Stat Tiles */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              {/* Estimated Budget */}
+              {/* 1. Client Paid Amount */}
+              <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100/80 transition-all hover:bg-blue-50/70">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-blue-700">Client Paid Amount</span>
+                  <div className="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <CheckCircle2 size={13} />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-slate-900 mt-2 tracking-tight">
+                  {formatCurrency(clientPaid)}
+                </div>
+                <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  Advance received from client
+                </div>
+              </div>
+
+              {/* 2. Total Site Expenses */}
               <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-100 transition-all hover:bg-slate-50">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500">Estimated Budget</span>
-                  <div className="w-6 h-6 rounded-md bg-slate-200/60 text-slate-600 flex items-center justify-center">
-                    <IndianRupee size={12} />
+                  <span className="text-xs font-semibold text-slate-600">Total Expenses Spent</span>
+                  <div className="w-6 h-6 rounded-md bg-slate-200/60 text-slate-700 flex items-center justify-center">
+                    <Wallet size={13} />
                   </div>
                 </div>
-                <div className="text-2xl font-extrabold text-slate-900 mt-2 tracking-tight">
-                  ₹25,00,000
+                <div className="text-2xl font-black text-slate-900 mt-2 tracking-tight">
+                  {formatCurrency(totalExpenses)}
                 </div>
-                <div className="text-[11px] text-slate-400 font-medium mt-0.5">
-                  Total sanctioned budget
+                <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  Materials + Labour + Rental
                 </div>
               </div>
 
-              {/* Total Spent */}
-              <div className="bg-emerald-50/40 rounded-xl p-4 border border-emerald-100/70 transition-all hover:bg-emerald-50/60">
+              {/* 3. Excess Amount */}
+              <div className="bg-emerald-50/70 rounded-xl p-4 border border-emerald-200/80 transition-all hover:bg-emerald-50 shadow-2xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-emerald-700">Total Spent</span>
+                  <span className="text-xs font-bold text-emerald-800">Excess Amount (In Hand)</span>
                   <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                    <ArrowUpRight size={13} />
+                    <TrendingUp size={13} />
                   </div>
                 </div>
-                <div className="text-2xl font-extrabold text-emerald-700 mt-2 tracking-tight">
-                  ₹15,00,000
+                <div className="text-2xl font-black text-emerald-700 mt-2 tracking-tight">
+                  {formatCurrency(excessAmount)}
                 </div>
-                <div className="text-[11px] text-emerald-600/80 font-medium mt-0.5">
-                  60% of estimated budget
-                </div>
-              </div>
-
-              {/* Balance */}
-              <div className="bg-sky-50/40 rounded-xl p-4 border border-sky-100/70 transition-all hover:bg-sky-50/60">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-sky-700">Balance</span>
-                  <div className="w-6 h-6 rounded-md bg-sky-100 text-sky-700 flex items-center justify-center">
-                    <ShieldCheck size={13} />
-                  </div>
-                </div>
-                <div className="text-2xl font-extrabold text-sky-800 mt-2 tracking-tight">
-                  ₹10,00,000
-                </div>
-                <div className="text-[11px] text-sky-600/80 font-medium mt-0.5">
-                  40% remaining funds
+                <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">
+                  Surplus cash available in hand
                 </div>
               </div>
             </div>
 
-            {/* Sleek Budget Progress Meter */}
-            <div className="pt-2">
-              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden flex">
+            {/* Clean Progress Meter & Breakdown Formula */}
+            <div className="pt-1 space-y-2">
+              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden flex">
                 <div
-                  className="bg-emerald-600 h-full rounded-l-full transition-all duration-500"
-                  style={{ width: '60%' }}
+                  className="bg-purple-600 h-full rounded-l-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.round((totalExpenses / clientPaid) * 100))}%` }}
                 />
                 <div
-                  className="bg-sky-400 h-full rounded-r-full transition-all duration-500"
-                  style={{ width: '40%' }}
+                  className="bg-emerald-500 h-full rounded-r-full transition-all duration-500"
+                  style={{ width: `${Math.max(0, 100 - Math.min(100, Math.round((totalExpenses / clientPaid) * 100)))}%` }}
                 />
               </div>
-              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium mt-1.5 px-0.5">
+              <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 font-medium px-0.5 gap-2">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600 inline-block" />
-                  <span>Spent: ₹15,00,000 (60%)</span>
+                  <span className="w-2 h-2 rounded-full bg-purple-600 inline-block" />
+                  <span>Spent: <strong className="text-slate-800">{formatCurrency(totalExpenses)}</strong> ({Math.round((totalExpenses / clientPaid) * 100)}%)</span>
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-sky-400 inline-block" />
-                  <span>Available: ₹10,00,000 (40%)</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                  <span>Excess in Hand: <strong className="text-emerald-700">{formatCurrency(excessAmount)}</strong> ({100 - Math.round((totalExpenses / clientPaid) * 100)}%)</span>
+                </span>
+                <span className="text-[11px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 font-mono">
+                  Excess = Client Paid ({formatCurrency(clientPaid)}) − Spent ({formatCurrency(totalExpenses)})
                 </span>
               </div>
             </div>
@@ -495,10 +523,23 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
 
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Estimated Budget</span>
-                <div className="flex items-center gap-1 font-bold text-slate-900 text-sm">
-                  <span>₹</span>
-                  <span>25,00,000</span>
-                </div>
+                <span className="font-bold text-slate-900 text-sm">
+                  {formatCurrency(projectBudget)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Client Paid</span>
+                <span className="font-bold text-blue-700 text-sm">
+                  {formatCurrency(clientPaid)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Pending to Receive</span>
+                <span className="font-bold text-rose-600 text-sm">
+                  {formatCurrency(clientPending)}
+                </span>
               </div>
 
               <div className="flex items-center justify-between">

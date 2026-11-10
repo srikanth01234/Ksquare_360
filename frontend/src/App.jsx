@@ -88,6 +88,18 @@ export default function App() {
       amount: '₹1,200',
       paymentStatus: 'Partial',
     },
+    {
+      id: '06',
+      date: '28 Oct 2026',
+      siteName: 'Green Villa',
+      siteCode: 'KS-001',
+      category: 'Additional Work',
+      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
+      description: 'Parapet wall 2ft extension & plastering',
+      supplier: 'Ravi Mason Contractors',
+      amount: '₹35,000',
+      paymentStatus: 'Paid',
+    },
   ]);
 
   const handleAddExpense = (newExp) => {
@@ -99,8 +111,10 @@ export default function App() {
           ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
           : newExp.category === 'Labour'
           ? 'bg-sky-50 text-sky-700 border-sky-200/80'
-          : newExp.category === 'Vehicle Rent'
+          : newExp.category === 'Additional Work'
           ? 'bg-purple-50 text-purple-700 border-purple-200/80'
+          : newExp.category === 'Vehicle Rent'
+          ? 'bg-indigo-50 text-indigo-700 border-indigo-200/80'
           : newExp.category === 'Rent'
           ? 'bg-amber-50 text-amber-800 border-amber-200/80'
           : 'bg-slate-100 text-slate-700 border-slate-200',

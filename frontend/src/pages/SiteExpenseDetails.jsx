@@ -20,6 +20,9 @@ import {
   Info,
   CheckCircle2,
   Clock,
+  Zap,
+  Coins,
+  Hourglass,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
 
@@ -163,19 +166,49 @@ export default function SiteExpenseDetails({
     },
   ]);
 
+  // Additional Work entries
+  const [additionalWorkEntries, setAdditionalWorkEntries] = useState([
+    {
+      id: 1,
+      date: '08 Oct 2026',
+      material: 'Parapet wall 2ft height extension & plastering',
+      supplier: 'Ravi Mason Contractors',
+      qty: '1',
+      unit: 'Job',
+      rate: '20,000.00',
+      amount: '20,000.00',
+      payment: 'Paid',
+    },
+    {
+      id: 2,
+      date: '14 Oct 2026',
+      material: 'Extra electrical conduit routing & DB reroute',
+      supplier: 'Kannan Electricals',
+      qty: '1',
+      unit: 'Lot',
+      rate: '15,000.00',
+      amount: '15,000.00',
+      payment: 'Paid',
+    },
+  ]);
+
   const activeEntries =
     activeTab === 'Material'
       ? materialEntries
       : activeTab === 'Labour'
       ? labourEntries
-      : rentalEntries;
+      : activeTab === 'Rental'
+      ? rentalEntries
+      : additionalWorkEntries;
 
   const currentTabTotal =
     activeTab === 'Material'
       ? '₹ 4,50,000'
       : activeTab === 'Labour'
       ? '₹ 2,75,000'
-      : '₹ 1,20,000';
+      : activeTab === 'Rental'
+      ? '₹ 1,20,000'
+      : '₹ 35,000';
 
   const filteredEntries = activeEntries.filter(
     (item) =>
@@ -255,69 +288,74 @@ export default function SiteExpenseDetails({
       {/* 3. 4 Stat Cards Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Total Expenses */}
-        <div className="bg-[#edf9f3] rounded-2xl p-5 border border-emerald-100/80 shadow-2xs flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-            <Layers size={22} />
-          </div>
-          <div>
-            <div className="text-xs text-slate-500 font-medium">Total Expenses</div>
-            <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-              ₹ 8,45,000
-            </div>
-          </div>
-        </div>
-
-        {/* Material */}
         <div className="bg-[#edf9f3] rounded-2xl p-5 border border-emerald-100/80 shadow-2xs flex items-center justify-between">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-              <Package size={22} />
+              <Layers size={22} />
             </div>
             <div>
-              <div className="text-xs text-slate-500 font-medium">Material</div>
+              <div className="text-xs text-slate-500 font-medium">Total Expenses</div>
               <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                ₹ 4,50,000
+                ₹ 8,45,000
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-            (53%)
+            Total
           </span>
         </div>
 
-        {/* Labour */}
+        {/* Paid Amount */}
         <div className="bg-[#edf5ff] rounded-2xl p-5 border border-blue-100/80 shadow-2xs flex items-center justify-between">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
-              <HardHat size={22} />
+              <CheckCircle2 size={22} />
             </div>
             <div>
-              <div className="text-xs text-slate-500 font-medium">Labour</div>
-              <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                ₹ 2,75,000
+              <div className="text-xs text-slate-500 font-medium">Paid Amount</div>
+              <div className="text-2xl font-black text-emerald-700 tracking-tight mt-0.5">
+                ₹ 6,50,000
               </div>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-            (33%)
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+            77%
           </span>
         </div>
 
-        {/* Rental */}
-        <div className="bg-[#fff7ee] rounded-2xl p-5 border border-amber-100/80 shadow-2xs flex items-center justify-between">
+        {/* Pending Amount */}
+        <div className="bg-[#fef2f2] rounded-2xl p-5 border border-rose-100/80 shadow-2xs flex items-center justify-between">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-              <Truck size={22} />
+            <div className="w-12 h-12 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
+              <Hourglass size={22} />
             </div>
             <div>
-              <div className="text-xs text-slate-500 font-medium">Rental</div>
-              <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                ₹ 1,20,000
+              <div className="text-xs text-slate-500 font-medium">Pending Amount</div>
+              <div className="text-2xl font-black text-rose-600 tracking-tight mt-0.5">
+                ₹ 1,95,000
               </div>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-            (14%)
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
+            23%
+          </span>
+        </div>
+
+        {/* Additional Work Expenses */}
+        <div className="bg-[#f5f2ff] rounded-2xl p-5 border border-purple-100/80 shadow-2xs flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
+              <Zap size={22} />
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 font-medium">Additional Work Expenses</div>
+              <div className="text-2xl font-black text-purple-700 tracking-tight mt-0.5">
+                ₹ 35,000
+              </div>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+            Scope +
           </span>
         </div>
       </div>
@@ -362,6 +400,19 @@ export default function SiteExpenseDetails({
           <Truck size={15} />
           <span>Rental Expenses (9)</span>
         </button>
+
+        {/* Additional Work Expenses */}
+        <button
+          onClick={() => setActiveTab('Additional Work')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            activeTab === 'Additional Work'
+              ? 'bg-[#008744] text-white shadow-md shadow-emerald-800/20'
+              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80 hover:border-slate-300'
+          }`}
+        >
+          <Zap size={15} />
+          <span>Additional Work (2)</span>
+        </button>
       </div>
 
       {/* 5. Expenses Data Table Container */}
@@ -373,6 +424,7 @@ export default function SiteExpenseDetails({
               {activeTab === 'Material' && <Package size={17} />}
               {activeTab === 'Labour' && <HardHat size={17} />}
               {activeTab === 'Rental' && <Truck size={17} />}
+              {activeTab === 'Additional Work' && <Zap size={17} />}
             </div>
             <h3 className="text-base font-bold text-slate-900">
               {activeTab} Expenses
