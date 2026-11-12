@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -23,197 +23,172 @@ import {
   Zap,
   Coins,
   Hourglass,
+  CreditCard,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
+import { expenseApi, paymentApi } from '../services/api';
 
 export default function SiteExpenseDetails({
   site = null,
   onBack = () => {},
 }) {
-  const [activeTab, setActiveTab] = useState('Material'); // 'Material' | 'Labour' | 'Rental'
+  const [activeTab, setActiveTab] = useState('Material'); // 'Material' | 'Labour' | 'Rental' | 'Additional Work'
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [siteExpenses, setSiteExpenses] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Active site data
   const currentSite = site || {
-    name: 'Green Villa',
+    name: 'Site Expenses',
     code: 'KS-001',
     location: 'Chennai, TN',
-    client: 'Arun Kumar',
-    startDate: '12 Jan 2026',
+    client: 'Client',
+    startDate: 'Recent',
     status: 'Active',
   };
 
-  // Material entries
-  const [materialEntries, setMaterialEntries] = useState([
-    {
-      id: 1,
-      date: '01 Oct 2026',
-      material: 'Cement (50 kg Bag)',
-      supplier: 'Sri Cement Traders',
-      qty: '50',
-      unit: 'Bag',
-      rate: '420.00',
-      amount: '21,000.00',
-      payment: 'Paid',
-    },
-    {
-      id: 2,
-      date: '02 Oct 2026',
-      material: 'Sand (M-Sand)',
-      supplier: 'Velan Materials',
-      qty: '2',
-      unit: 'Load',
-      rate: '5,500.00',
-      amount: '11,000.00',
-      payment: 'Paid',
-    },
-    {
-      id: 3,
-      date: '05 Oct 2026',
-      material: 'Bricks (Red)',
-      supplier: 'Chola Bricks',
-      qty: '5,000',
-      unit: 'Nos',
-      rate: '8.00',
-      amount: '40,000.00',
-      payment: 'Paid',
-    },
-    {
-      id: 4,
-      date: '07 Oct 2026',
-      material: 'Steel Rod (12 mm)',
-      supplier: 'VS Steel',
-      qty: '1,000',
-      unit: 'Kg',
-      rate: '75.00',
-      amount: '75,000.00',
-      payment: 'Pending',
-    },
-    {
-      id: 5,
-      date: '10 Oct 2026',
-      material: 'Gravel (20 mm)',
-      supplier: 'Velan Materials',
-      qty: '1',
-      unit: 'Load',
-      rate: '6,000.00',
-      amount: '6,000.00',
-      payment: 'Paid',
-    },
-  ]);
+  useEffect(() => {
+    loadSiteExpenses();
+  }, [currentSite]);
 
-  // Labour entries
-  const [labourEntries, setLabourEntries] = useState([
-    {
-      id: 1,
-      date: '01 Oct 2026',
-      material: 'Mason wages (4 Workers)',
-      supplier: 'Direct Labour',
-      qty: '4',
-      unit: 'Days',
-      rate: '1,000.00',
-      amount: '4,000.00',
-      payment: 'Paid',
-    },
-    {
-      id: 2,
-      date: '02 Oct 2026',
-      material: 'Helper wages (6 Workers)',
-      supplier: 'Direct Labour',
-      qty: '6',
-      unit: 'Days',
-      rate: '700.00',
-      amount: '4,200.00',
-      payment: 'Paid',
-    },
-    {
-      id: 3,
-      date: '05 Oct 2026',
-      material: 'Bar Bender contractor',
-      supplier: 'Ravi & Co',
-      qty: '1',
-      unit: 'Lot',
-      rate: '25,000.00',
-      amount: '25,000.00',
-      payment: 'Pending',
-    },
-  ]);
+  const loadSiteExpenses = async () => {
+    setLoading(true);
+    try {
+      const res = await expenseApi.getAll();
+      const all = res.data || res || [];
+      const sId = currentSite._id || currentSite.id;
+      const sName = currentSite.name;
+      const sCode = currentSite.code;
 
-  // Rental entries
-  const [rentalEntries, setRentalEntries] = useState([
-    {
-      id: 1,
-      date: '03 Oct 2026',
-      material: 'Concrete Mixer machine',
-      supplier: 'BuildEquip Rentals',
-      qty: '3',
-      unit: 'Days',
-      rate: '1,200.00',
-      amount: '3,600.00',
-      payment: 'Paid',
-    },
-    {
-      id: 2,
-      date: '06 Oct 2026',
-      material: 'Lorry Transport (Steel)',
-      supplier: 'City Lorry Service',
-      qty: '1',
-      unit: 'Trip',
-      rate: '4,500.00',
-      amount: '4,500.00',
-      payment: 'Paid',
-    },
-  ]);
+      const filtered = all.filter((e) => {
+        const matchesId = sId && (e.siteId === sId || e.site?._id === sId || e.site === sId);
+        const matchesName = sName && (e.siteName === sName || e.site?.name === sName);
+        const matchesCode = sCode && (e.siteCode === sCode || e.site?.code === sCode);
+        return matchesId || matchesName || matchesCode;
+      });
 
-  // Additional Work entries
-  const [additionalWorkEntries, setAdditionalWorkEntries] = useState([
-    {
-      id: 1,
-      date: '08 Oct 2026',
-      material: 'Parapet wall 2ft height extension & plastering',
-      supplier: 'Ravi Mason Contractors',
-      qty: '1',
-      unit: 'Job',
-      rate: '20,000.00',
-      amount: '20,000.00',
-      payment: 'Paid',
-    },
-    {
-      id: 2,
-      date: '14 Oct 2026',
-      material: 'Extra electrical conduit routing & DB reroute',
-      supplier: 'Kannan Electricals',
-      qty: '1',
-      unit: 'Lot',
-      rate: '15,000.00',
-      amount: '15,000.00',
-      payment: 'Paid',
-    },
-  ]);
+      const formatted = filtered.map((e, idx) => ({
+        ...e,
+        id: e._id || e.id || String(idx + 1).padStart(2, '0'),
+        date: e.date ? new Date(e.date).toLocaleDateString('en-IN') : 'Recent',
+        material: e.description || e.materialName || e.category,
+        supplier: e.supplierName || e.vendorName || e.supplier || '-',
+        qty: e.quantity || 1,
+        unit: e.unit || (e.category === 'Labour' ? 'Workers' : 'Units'),
+        rate: typeof e.rate === 'number' ? `₹${e.rate.toLocaleString('en-IN')}` : (e.rate ? `₹${e.rate}` : '-'),
+        amountNum: typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0).replace(/[^\d.]/g, '')) || 0,
+        amount: typeof e.amount === 'number' ? `₹${e.amount.toLocaleString('en-IN')}` : (e.amount || '₹0'),
+        payment: e.paymentStatus || 'Paid',
+      }));
 
-  const activeEntries =
-    activeTab === 'Material'
-      ? materialEntries
-      : activeTab === 'Labour'
-      ? labourEntries
-      : activeTab === 'Rental'
-      ? rentalEntries
-      : additionalWorkEntries;
+      setSiteExpenses(formatted);
+    } catch (err) {
+      console.warn('Could not load site expenses from backend:', err.message);
+      setSiteExpenses([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const currentTabTotal =
-    activeTab === 'Material'
-      ? '₹ 4,50,000'
-      : activeTab === 'Labour'
-      ? '₹ 2,75,000'
-      : activeTab === 'Rental'
-      ? '₹ 1,20,000'
-      : '₹ 35,000';
+  const handleAddExpense = async (newExp) => {
+    try {
+      const sId = currentSite._id || currentSite.id;
+      const rawAmt = typeof newExp.totalExpenseAmount === 'number'
+        ? newExp.totalExpenseAmount
+        : parseFloat(String(newExp.amount || '').replace(/[^\d.]/g, '')) || 0;
+
+      await expenseApi.create({
+        siteId: sId,
+        site: sId,
+        siteName: currentSite.name,
+        siteCode: currentSite.code,
+        category: newExp.category,
+        description: newExp.description,
+        supplierName: newExp.supplierName || newExp.supplier || '-',
+        amount: rawAmt,
+        quantity: newExp.quantity,
+        unit: newExp.unit,
+        rate: newExp.rate,
+        paymentStatus: newExp.paymentStatus || 'Paid',
+        paymentMode: newExp.paymentMethod === 'UPI' ? 'UPI (GPay)' : 'Cash',
+        date: newExp.date || new Date().toISOString(),
+        items: newExp.materialItems || [],
+        notes: newExp.notes || '',
+      });
+      await loadSiteExpenses();
+    } catch (err) {
+      console.warn('Could not save expense in backend:', err.message);
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this expense record?')) return;
+    try {
+      await expenseApi.delete(id);
+      await loadSiteExpenses();
+    } catch (err) {
+      console.warn('Could not delete expense:', err.message);
+    }
+  };
+
+  const handleClearPayment = async (row) => {
+    if (!window.confirm(`Record outgoing payment and mark "${row.material}" as Paid?`)) return;
+    try {
+      const amt = row.amountNum || parseFloat(String(row.amount).replace(/[^0-9.]/g, '')) || 0;
+      await paymentApi.create({
+        flowType: 'OUTGOING',
+        siteId: currentSite._id || currentSite.id,
+        siteName: currentSite.name,
+        siteCode: currentSite.code,
+        expenseId: row._id || row.id,
+        partyName: row.supplier && row.supplier !== '-' ? row.supplier : row.material,
+        category:
+          activeTab === 'Material'
+            ? 'Materials'
+            : activeTab === 'Labour'
+            ? 'Labour Wages'
+            : activeTab === 'Rental'
+            ? 'Machinery Rental'
+            : 'Other',
+        amount: amt,
+        paymentMode: 'Bank Transfer (NEFT)',
+        referenceNo: `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
+        invoiceRef: `Settlement for ${row.material}`,
+      });
+      await loadSiteExpenses();
+    } catch (err) {
+      console.warn('Error clearing payment for expense:', err.message);
+    }
+  };
+
+  // Calculations from live site expenses
+  const totalExpenses = siteExpenses.reduce((sum, e) => sum + (e.amountNum || 0), 0);
+  const paidExpenses = siteExpenses.filter((e) => e.payment === 'Paid');
+  const paidAmount = paidExpenses.reduce((sum, e) => sum + (e.amountNum || 0), 0);
+  const pendingAmount = Math.max(0, totalExpenses - paidAmount);
+  const paidPercentage = totalExpenses > 0 ? Math.round((paidAmount / totalExpenses) * 100) : 0;
+  const pendingPercentage = totalExpenses > 0 ? 100 - paidPercentage : 0;
+  const additionalWorkAmount = siteExpenses
+    .filter((e) => e.category === 'Additional Work')
+    .reduce((sum, e) => sum + (e.amountNum || 0), 0);
+
+  // Filtered by tab
+  const activeEntries = siteExpenses.filter((e) => {
+    if (activeTab === 'Material') return e.category === 'Materials';
+    if (activeTab === 'Labour') return e.category === 'Labour';
+    if (activeTab === 'Rental') return e.category === 'Rental' || e.category === 'Vehicle Rent' || e.category === 'Rent';
+    if (activeTab === 'Additional Work') return e.category === 'Additional Work';
+    return true;
+  });
+
+  const tabSum = activeEntries.reduce((sum, e) => sum + (e.amountNum || 0), 0);
+  const currentTabTotal = `₹ ${tabSum.toLocaleString('en-IN')}`;
 
   const filteredEntries = activeEntries.filter(
     (item) =>
-      item.material.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.supplier.toLowerCase().includes(searchQuery.toLowerCase())
+      String(item.material || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(item.supplier || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -227,7 +202,7 @@ export default function SiteExpenseDetails({
           Site Expenses
         </button>
         <ChevronRight size={13} className="text-slate-400" />
-        <span className="text-emerald-700 font-bold">Expense Details</span>
+        <span className="text-emerald-700 font-bold">{currentSite.name} Expenses</span>
       </nav>
 
       {/* 2. Page Header Card */}
@@ -275,12 +250,14 @@ export default function SiteExpenseDetails({
           </div>
         </div>
 
-        {/* Right: Date Range */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-3 self-end md:self-auto">
-          <button className="flex items-center gap-2 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs hover:border-slate-300 transition-colors">
-            <Calendar size={14} className="text-slate-400" />
-            <span>01 Oct 2026 – 31 Oct 2026</span>
-            <ChevronDown size={13} className="text-slate-400" />
+          <button
+            onClick={() => setIsAddExpenseOpen(true)}
+            className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/20 transition-all cursor-pointer"
+          >
+            <Plus size={16} />
+            <span>+ Add Expense</span>
           </button>
         </div>
       </div>
@@ -296,12 +273,12 @@ export default function SiteExpenseDetails({
             <div>
               <div className="text-xs text-slate-500 font-medium">Total Expenses</div>
               <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
-                ₹ 8,45,000
+                ₹ {totalExpenses.toLocaleString('en-IN')}
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-            Total
+            {siteExpenses.length} Records
           </span>
         </div>
 
@@ -314,12 +291,12 @@ export default function SiteExpenseDetails({
             <div>
               <div className="text-xs text-slate-500 font-medium">Paid Amount</div>
               <div className="text-2xl font-black text-emerald-700 tracking-tight mt-0.5">
-                ₹ 6,50,000
+                ₹ {paidAmount.toLocaleString('en-IN')}
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-            77%
+            {paidPercentage}%
           </span>
         </div>
 
@@ -332,12 +309,12 @@ export default function SiteExpenseDetails({
             <div>
               <div className="text-xs text-slate-500 font-medium">Pending Amount</div>
               <div className="text-2xl font-black text-rose-600 tracking-tight mt-0.5">
-                ₹ 1,95,000
+                ₹ {pendingAmount.toLocaleString('en-IN')}
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
-            23%
+            {pendingPercentage}%
           </span>
         </div>
 
@@ -348,14 +325,14 @@ export default function SiteExpenseDetails({
               <Zap size={22} />
             </div>
             <div>
-              <div className="text-xs text-slate-500 font-medium">Additional Work Expenses</div>
-              <div className="text-2xl font-black text-purple-700 tracking-tight mt-0.5">
-                ₹ 35,000
+              <div className="text-xs text-slate-500 font-medium">Additional Work</div>
+              <div className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">
+                ₹ {additionalWorkAmount.toLocaleString('en-IN')}
               </div>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
-            Scope +
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">
+            Extras
           </span>
         </div>
       </div>
@@ -372,7 +349,7 @@ export default function SiteExpenseDetails({
           }`}
         >
           <Package size={15} />
-          <span>Material Expenses (32)</span>
+          <span>Material Expenses ({siteExpenses.filter((e) => e.category === 'Materials').length})</span>
         </button>
 
         {/* Labour Expenses */}
@@ -385,7 +362,7 @@ export default function SiteExpenseDetails({
           }`}
         >
           <HardHat size={15} />
-          <span>Labour Expenses (18)</span>
+          <span>Labour Expenses ({siteExpenses.filter((e) => e.category === 'Labour').length})</span>
         </button>
 
         {/* Rental Expenses */}
@@ -398,7 +375,7 @@ export default function SiteExpenseDetails({
           }`}
         >
           <Truck size={15} />
-          <span>Rental Expenses (9)</span>
+          <span>Rental Expenses ({siteExpenses.filter((e) => e.category === 'Rental' || e.category === 'Vehicle Rent' || e.category === 'Rent').length})</span>
         </button>
 
         {/* Additional Work Expenses */}
@@ -411,7 +388,7 @@ export default function SiteExpenseDetails({
           }`}
         >
           <Zap size={15} />
-          <span>Additional Work (2)</span>
+          <span>Additional Work ({siteExpenses.filter((e) => e.category === 'Additional Work').length})</span>
         </button>
       </div>
 
@@ -440,16 +417,12 @@ export default function SiteExpenseDetails({
               <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder={`Search ${activeTab.toLowerCase()}, supplier...`}
+                placeholder={`Search ${activeTab.toLowerCase()} expenses...`}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
               />
             </div>
-
-            <button className="p-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 shadow-2xs">
-              <Filter size={15} />
-            </button>
           </div>
         </div>
 
@@ -461,112 +434,113 @@ export default function SiteExpenseDetails({
                 <th className="py-3.5 px-4 w-12 text-center">#</th>
                 <th className="py-3.5 px-4">Date</th>
                 <th className="py-3.5 px-4">{activeTab === 'Material' ? 'Material' : 'Item / Work'}</th>
-                <th className="py-3.5 px-4">Supplier</th>
+                <th className="py-3.5 px-4">Supplier / Worker</th>
                 <th className="py-3.5 px-4 text-center">Qty</th>
                 <th className="py-3.5 px-4 text-center">Unit</th>
-                <th className="py-3.5 px-4 text-right">Rate (₹)</th>
+                <th className="py-3.5 px-4 text-right">Rate</th>
                 <th className="py-3.5 px-4 text-right">Amount (₹)</th>
                 <th className="py-3.5 px-4 text-center">Payment</th>
                 <th className="py-3.5 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredEntries.map((row) => (
-                <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="py-3.5 px-4 text-center text-slate-400 font-medium">
-                    {row.id}
-                  </td>
-                  <td className="py-3.5 px-4 font-medium text-slate-600 whitespace-nowrap">
-                    {row.date}
-                  </td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900">
-                    {row.material}
-                  </td>
-                  <td className="py-3.5 px-4 text-slate-600 font-medium">
-                    {row.supplier}
-                  </td>
-                  <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
-                    {row.qty}
-                  </td>
-                  <td className="py-3.5 px-4 text-center text-slate-500">
-                    {row.unit}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-medium text-slate-700">
-                    {row.rate}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-bold text-slate-900 whitespace-nowrap">
-                    {row.amount}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    {row.payment === 'Paid' ? (
-                      <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                        Paid
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
-                        Pending
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center justify-center gap-2">
-                      <button className="text-slate-400 hover:text-slate-700 transition-colors">
-                        <Edit2 size={13} />
-                      </button>
-                      <button className="text-slate-400 hover:text-rose-600 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+              {loading ? (
+                <tr>
+                  <td colSpan="10" className="py-12 text-center text-slate-400">
+                    <Clock size={24} className="mx-auto mb-2 text-slate-300 animate-spin" />
+                    <div className="font-semibold text-slate-600">Loading site expenses...</div>
                   </td>
                 </tr>
-              ))}
+              ) : filteredEntries.length === 0 ? (
+                <tr>
+                  <td colSpan="10" className="py-12 text-center text-slate-400">
+                    <Package size={28} className="mx-auto mb-2 text-slate-300" />
+                    <div className="font-bold text-slate-600">No {activeTab.toLowerCase()} expenses recorded for this site yet.</div>
+                    <div className="text-xs text-slate-400 mt-1">Click "+ Add Expense" above to record a new expense.</div>
+                  </td>
+                </tr>
+              ) : (
+                filteredEntries.map((row, idx) => (
+                  <tr key={row._id || row.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="py-3.5 px-4 text-center text-slate-400 font-medium">
+                      {idx + 1}
+                    </td>
+                    <td className="py-3.5 px-4 font-medium text-slate-600 whitespace-nowrap">
+                      {row.date}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                      {row.material}
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-600 font-medium">
+                      {row.supplier}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
+                      {row.qty}
+                    </td>
+                    <td className="py-3.5 px-4 text-center text-slate-500">
+                      {row.unit}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-medium text-slate-700">
+                      {row.rate}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-bold text-slate-900 whitespace-nowrap">
+                      {row.amount}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {row.payment === 'Paid' ? (
+                        <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                          Paid
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                          Pending
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center justify-center gap-2">
+                        {row.payment !== 'Paid' && (
+                          <button
+                            title="Clear / Pay this bill"
+                            onClick={() => handleClearPayment(row)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 text-[10px] font-bold transition-all cursor-pointer shadow-2xs"
+                          >
+                            <CreditCard size={11} />
+                            <span>Pay</span>
+                          </button>
+                        )}
+                        <button
+                          title="Delete expense"
+                          onClick={() => handleDeleteExpense(row._id || row.id)}
+                          className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer p-1"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-
-        {/* Pagination Footer */}
-        <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-100 gap-3 text-xs">
-          <span className="text-slate-500 font-medium">
-            Showing 1 – {filteredEntries.length} of 32 entries
-          </span>
-          <div className="flex items-center gap-1.5">
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-50">
-              <ChevronLeft size={13} />
-            </button>
-            <button className="w-7 h-7 rounded-lg bg-[#008744] text-white font-bold text-xs">
-              1
-            </button>
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs hover:bg-slate-50">
-              2
-            </button>
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs hover:bg-slate-50">
-              3
-            </button>
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs hover:bg-slate-50">
-              4
-            </button>
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs hover:bg-slate-50">
-              5
-            </button>
-            <span className="text-xs text-slate-400 px-1 font-bold">...</span>
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs hover:bg-slate-50">
-              7
-            </button>
-            <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-slate-50">
-              <ChevronRight size={13} />
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* 6. Bottom Helpful Tip Notice */}
+      {/* Helpful Tip Notice */}
       <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-xs text-slate-600">
         <Info size={16} className="text-emerald-600 shrink-0" />
         <span>
-          <strong>Tip:</strong> Use the tabs above to view Labour Expenses and Rental Expenses for this site.
+          <strong>Tip:</strong> Use the tabs above to filter Material, Labour, Rental, and Additional Work Expenses for <strong>{currentSite.name}</strong>.
         </span>
       </div>
+
+      {/* Add Expense Modal with Locked Site */}
+      <AddExpenseModal
+        isOpen={isAddExpenseOpen}
+        onClose={() => setIsAddExpenseOpen(false)}
+        onAddExpense={handleAddExpense}
+        lockedSite={`${currentSite.name} (${currentSite.code})`}
+      />
     </div>
   );
 }
-

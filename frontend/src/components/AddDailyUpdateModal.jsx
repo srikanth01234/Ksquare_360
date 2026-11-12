@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { modalBackdropVariants, modalContentVariants } from '../utils/animations';
 import {
   X,
   CalendarCheck,
@@ -17,16 +19,31 @@ import {
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
 
-export default function AddDailyUpdateModal({ isOpen, onClose, onAddUpdate }) {
+export default function AddDailyUpdateModal({
+  isOpen,
+  onClose,
+  onAddUpdate,
+  lockedSite = null,
+  sites = [],
+}) {
   const [formData, setFormData] = useState({
-    site: 'Green Villa (KS-001)',
-    date: '2026-11-01',
+    site: lockedSite || (sites.length > 0 ? `${sites[0].name} (${sites[0].code})` : ''),
+    date: new Date().toISOString().split('T')[0],
     activity: 'Foundation Work',
-    description: 'Column foundation reinforcement and formwork setup completed on the north side.',
-    progress: 60,
-    totalLabour: '6',
+    description: '',
+    progress: 50,
+    totalLabour: '4',
     remarks: '',
   });
+
+  // Keep site synced when lockedSite changes
+  React.useEffect(() => {
+    if (lockedSite) {
+      setFormData((prev) => ({ ...prev, site: lockedSite }));
+    } else if (sites.length > 0 && !formData.site) {
+      setFormData((prev) => ({ ...prev, site: `${sites[0].name} (${sites[0].code})` }));
+    }
+  }, [lockedSite, sites]);
 
   const [selectedLabourTypes, setSelectedLabourTypes] = useState(['Mason', 'Carpenter']);
 
@@ -66,27 +83,34 @@ export default function AddDailyUpdateModal({ isOpen, onClose, onAddUpdate }) {
     e.preventDefault();
     if (!formData.description) return;
 
+    const matchingSite = sites.find((s) => `${s.name} (${s.code})` === formData.site || s.name === formData.site);
     const siteParts = formData.site.split(' (');
-    const siteName = siteParts[0] || 'Green Villa';
-    const siteCode = siteParts[1] ? siteParts[1].replace(')', '') : 'KS-001';
+    const siteName = matchingSite ? matchingSite.name : siteParts[0] || 'Site';
+    const siteCode = matchingSite ? matchingSite.code : siteParts[1] ? siteParts[1].replace(')', '') : '';
+    const siteId = matchingSite ? (matchingSite._id || matchingSite.id) : null;
 
     const materialsSummary = materials
       .filter((m) => m.material)
-      .map((m) => m.material)
+      .map((m) => `${m.material} ${m.quantity ? `(${m.quantity} ${m.unit})` : ''}`.trim())
       .join(', ') || 'Materials';
 
     const newUpdate = {
-      id: Date.now().toString(),
-      date: '01 Nov 2026',
-      siteName: siteName,
-      siteCode: siteCode,
+      siteId,
+      site: siteId,
+      siteName,
+      siteCode,
+      title: formData.activity,
       activity: formData.activity,
       description: formData.description,
-      labourCount: formData.totalLabour || '4',
+      workPhase: formData.activity,
+      workersCount: parseInt(formData.totalLabour) || 0,
+      labourCount: parseInt(formData.totalLabour) || 0,
       materialsUsed: materialsSummary,
       duration: '8 hrs',
       progress: formData.progress,
       status: formData.progress >= 100 ? 'Completed' : 'In Progress',
+      date: formData.date || new Date().toISOString(),
+      notes: formData.remarks || '',
     };
 
     onAddUpdate(newUpdate);
@@ -94,9 +118,23 @@ export default function AddDailyUpdateModal({ isOpen, onClose, onAddUpdate }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
-        {/* Header */}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+        >
+          <motion.div
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden"
+          >
+            {/* Header */}
         <div className="flex items-center justify-between px-7 pt-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100/80 text-emerald-600 flex items-center justify-center shadow-xs shrink-0">
@@ -136,13 +174,21 @@ export default function AddDailyUpdateModal({ isOpen, onClose, onAddUpdate }) {
                   <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <select
                     value={formData.site}
+                    disabled={!!lockedSite}
                     onChange={(e) => setFormData({ ...formData, site: e.target.value })}
-                    className="w-full appearance-none pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    className="w-full appearance-none pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
                   >
-                    <option value="Green Villa (KS-001)">Green Villa (KS-001)</option>
-                    <option value="Office Renovation (KS-002)">Office Renovation (KS-002)</option>
-                    <option value="RK Residence (KS-004)">RK Residence (KS-004)</option>
-                    <option value="Metro Apartment (KS-005)">Metro Apartment (KS-005)</option>
+                    {lockedSite ? (
+                      <option value={lockedSite}>{lockedSite}</option>
+                    ) : sites.length > 0 ? (
+                      sites.map((s) => (
+                        <option key={s._id || s.id} value={`${s.name} (${s.code})`}>
+                          {s.name} ({s.code})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">No sites available</option>
+                    )}
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
@@ -390,8 +436,10 @@ export default function AddDailyUpdateModal({ isOpen, onClose, onAddUpdate }) {
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
   );
 }
 

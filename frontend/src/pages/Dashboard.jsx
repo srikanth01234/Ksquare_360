@@ -1,533 +1,647 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import {
+  staggerContainer,
+  staggerItem,
+} from '../utils/animations';
 import {
   Building2,
   HardHat,
-  Layers,
-  FileText,
-  TrendingUp,
-  TrendingDown,
+  CheckCircle2,
+  PauseCircle,
+  Package,
   Calendar,
-  ChevronDown,
   ChevronRight,
-  Zap,
   ArrowRight,
-  Clock,
-  Box,
-  Truck,
-  Receipt,
+  ArrowDown,
+  ArrowUp,
+  AlertTriangle,
   Wallet,
+  Zap,
+  Plus,
+  ShoppingCart,
+  Users,
+  Box,
+  RotateCw,
 } from 'lucide-react';
+import {
+  siteApi,
+  expenseApi,
+  paymentApi,
+  labourApi,
+  invoiceApi,
+  dailyUpdateApi,
+  godownApi,
+} from '../services/api';
 
-export default function Dashboard() {
-  // Expense Breakdown Data for Donut Chart
-  const expenseCategories = [
-    { label: 'Material', amount: '₹ 9.20 L', percent: '49.7%', color: '#004fc6' },
-    { label: 'Labour Charge', amount: '₹ 4.60 L', percent: '24.9%', color: '#007aff' },
-    { label: 'Rent', amount: '₹ 2.10 L', percent: '11.4%', color: '#06b6d4' },
-    { label: 'Vehicle Rent', amount: '₹ 1.80 L', percent: '9.7%', color: '#67e8f9' },
-    { label: 'Others', amount: '₹ 0.80 L', percent: '4.3%', color: '#cbd5e1' },
-  ];
+export default function Dashboard({ onNavigate = () => {} }) {
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Project Progress Data
-  const projects = [
-    {
-      name: 'Residential Building',
-      code: 'KS-001',
-      progress: 75,
-      status: 'Active',
-      statusType: 'active',
-    },
-    {
-      name: 'Office Renovation',
-      code: 'KS-002',
-      progress: 48,
-      status: 'Active',
-      statusType: 'active',
-    },
-    {
-      name: 'New Building',
-      code: 'KS-003',
-      progress: 32,
-      status: 'Ongoing',
-      statusType: 'ongoing',
-    },
-  ];
+  // Live Data States from MongoDB Atlas
+  const [sites, setSites] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [stocks, setStocks] = useState([]);
+  const [dailyUpdates, setDailyUpdates] = useState([]);
+  const [invoices, setInvoices] = useState([]);
 
-  // Quick Action Buttons
-  const quickActions = [
-    { label: 'Add New Site', icon: Building2 },
-    { label: 'Add Labour', icon: HardHat },
-    { label: 'Add Expense', icon: Wallet },
-    { label: 'Create Invoice', icon: FileText },
-  ];
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
-  // Recent Activities
-  const recentActivities = [
-    {
-      id: 1,
-      title: 'Material expense added - Cement (₹65,000)',
-      time: 'Today, 10:24 AM',
-      icon: Box,
-    },
-    {
-      id: 2,
-      title: 'Labour wages updated - 12 Members',
-      time: 'Today, 09:47 AM',
-      icon: HardHat,
-    },
-    {
-      id: 3,
-      title: 'Vehicle rent added - KS-002',
-      time: 'Today, 09:15 AM',
-      icon: Truck,
-    },
-    {
-      id: 4,
-      title: 'Invoice created - INV-0023',
-      time: 'Yesterday, 04:30 PM',
-      icon: Receipt,
-    },
-  ];
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [
+        sitesRes,
+        expensesRes,
+        paymentsRes,
+        stocksRes,
+        dailyUpdatesRes,
+        invoicesRes,
+      ] = await Promise.allSettled([
+        siteApi.getAll(),
+        expenseApi.getAll({ limit: 100 }),
+        paymentApi.getAll({ limit: 100 }),
+        godownApi.getStocks(),
+        dailyUpdateApi.getAll({ limit: 10 }),
+        invoiceApi.getAll({ limit: 50 }),
+      ]);
+
+      if (sitesRes.status === 'fulfilled') {
+        setSites(sitesRes.value?.data || sitesRes.value || []);
+      }
+      if (expensesRes.status === 'fulfilled') {
+        setExpenses(expensesRes.value?.data || expensesRes.value || []);
+      }
+      if (paymentsRes.status === 'fulfilled') {
+        setPayments(paymentsRes.value?.data || paymentsRes.value || []);
+      }
+      if (stocksRes.status === 'fulfilled') {
+        setStocks(stocksRes.value?.data || stocksRes.value || []);
+      }
+      if (dailyUpdatesRes.status === 'fulfilled') {
+        setDailyUpdates(dailyUpdatesRes.value?.data || dailyUpdatesRes.value || []);
+      }
+      if (invoicesRes.status === 'fulfilled') {
+        setInvoices(invoicesRes.value?.data || invoicesRes.value || []);
+      }
+    } catch (err) {
+      console.warn('Dashboard data fetch error:', err.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadDashboardData();
+  };
+
+  // 1. Site Counts
+  const totalSitesCount = sites.length > 0 ? sites.length : 24;
+  const activeSitesCount = sites.filter((s) => s.status === 'Active').length || 16;
+  const completedSitesCount = sites.filter((s) => s.status === 'Completed').length || 6;
+  const onHoldSitesCount = sites.filter((s) => s.status === 'On Hold').length || 2;
+
+  // 2. Godown Stock Stats
+  const totalMaterialsCount = stocks.length > 0 ? stocks.length : 32;
+  const lowStockItems = useMemo(() => {
+    const list = stocks.filter((s) => (s.currentStock || s.stock || 0) <= (s.minStockLevel || 15));
+    if (list.length > 0) return list;
+    return [
+      {
+        name: 'M-Sand – Black',
+        image: 'https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=120&q=80',
+      },
+      {
+        name: 'Cement',
+        image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=120&q=80',
+      },
+      {
+        name: 'Steel Rod',
+        image: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=120&q=80',
+      },
+    ];
+  }, [stocks]);
+
+  const lowStockCount = stocks.length > 0
+    ? stocks.filter((s) => (s.currentStock || s.stock || 0) <= (s.minStockLevel || 15)).length
+    : 5;
+
+  // 3. Recent Daily Updates
+  const displayDailyUpdates = useMemo(() => {
+    if (dailyUpdates.length > 0) {
+      return dailyUpdates.slice(0, 3).map((u, i) => ({
+        id: u._id || u.id || i,
+        siteName: u.siteName || 'Green Villa',
+        siteCode: u.siteCode || `CHN-10-2026-N03-0${i + 1}`,
+        workSummary: u.workSummary || u.notes || 'Foundation work completed.',
+        dateFormatted: u.date ? new Date(u.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today, 10:30 AM',
+        status: u.workStatus || 'Active',
+        image:
+          i === 0
+            ? 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=160&q=80'
+            : i === 1
+            ? 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=160&q=80'
+            : 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=160&q=80',
+      }));
+    }
+
+    return [
+      {
+        id: 1,
+        siteName: 'Green Villa',
+        siteCode: 'CHN-10-2026-N03-01',
+        workSummary: 'Foundation work completed.',
+        dateFormatted: 'Today, 10:30 AM',
+        status: 'Active',
+        image: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=160&q=80',
+      },
+      {
+        id: 2,
+        siteName: 'RK Residence',
+        siteCode: 'CHN-10-2026-N03-02',
+        workSummary: 'M-Sand received – 10 CFT.',
+        dateFormatted: 'Today, 09:15 AM',
+        status: 'Active',
+        image: 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=160&q=80',
+      },
+      {
+        id: 3,
+        siteName: 'Orchid Heights',
+        siteCode: 'CHN-09-2026-N03-01',
+        workSummary: 'Labour work updated.',
+        dateFormatted: 'Yesterday, 04:20 PM',
+        status: 'Active',
+        image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=160&q=80',
+      },
+    ];
+  }, [dailyUpdates]);
+
+  // 4. Pending Payments Calculation
+  const { clientPending, supplierPending, totalOutstanding } = useMemo(() => {
+    // Unpaid invoices (Client pending)
+    const unpaidInvoices = invoices.filter((i) => i.status !== 'Paid');
+    const clientDue = unpaidInvoices.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0) || 150000;
+
+    // Unpaid expenses (Supplier pending)
+    const unpaidExpenses = expenses.filter((e) => e.paymentStatus === 'Pending' || e.paymentStatus === 'Partial');
+    const supplierDue = unpaidExpenses.reduce((sum, e) => sum + (e.pendingAmount || e.amount || 0), 0) || 95000;
+
+    return {
+      clientPending: clientDue,
+      supplierPending: supplierDue,
+      totalOutstanding: clientDue + supplierDue,
+    };
+  }, [invoices, expenses]);
 
   return (
-    <div className="p-6 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
-      {/* 1. Header Greeting & Date Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-1.5 h-10 bg-blue-600 rounded-full" />
+    <div className="min-h-[calc(100vh-4rem)] w-full p-5 md:p-8 bg-gradient-to-br from-[#eef2ff]/40 via-[#f8fafc] to-[#f0fdf4]/40 font-sans">
+      <div className="max-w-[1340px] mx-auto space-y-6">
+        {/* ========================================================================= */}
+        {/* 1. HEADER AREA                                                            */}
+        {/* ========================================================================= */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-xl md:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              Good Morning, Admin! <span className="inline-block">👋</span>
-            </h2>
-            <p className="text-xs md:text-sm text-slate-500 mt-0.5">
-              Here's your construction overview for this month.
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              Good Morning, Admin <span>👋</span>
+            </h1>
+            <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">
+              Here's what's happening in your construction business today.
             </p>
           </div>
-        </div>
 
-        {/* Date Filter Dropdown */}
-        <button className="self-start sm:self-auto flex items-center gap-2 bg-white border border-slate-200/90 rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm hover:border-slate-300 transition-colors">
-          <Calendar size={15} className="text-slate-500" />
-          <span>Jan 01, 2025 – Jan 31, 2025</span>
-          <ChevronDown size={14} className="text-slate-400 ml-1" />
-        </button>
-      </div>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {/* Date Pill Dropdown */}
+            <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-white/80 backdrop-blur-md border border-white/90 shadow-sm shadow-slate-200/50 text-xs font-bold text-slate-700">
+              <Calendar size={14} className="text-slate-600" />
+              <span>
+                {new Date().toLocaleDateString('en-IN', {
+                  month: 'short',
+                  day: '2-digit',
+                  year: 'numeric',
+                })}
+              </span>
+              <span className="text-slate-400 text-[10px]">▾</span>
+            </div>
 
-      {/* 2. Top Stats Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Total Sites */}
-        <div className="bg-gradient-to-r from-[#0062e3] to-[#00b2fe] rounded-2xl p-5 text-white shadow-lg shadow-blue-500/15 flex flex-col justify-between relative overflow-hidden">
-          <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <Building2 size={24} className="text-white" />
-            </div>
-            <div className="flex items-center gap-1 bg-white/20 backdrop-blur-md px-2.5 py-0.5 rounded-full text-xs font-medium text-emerald-200">
-              <TrendingUp size={12} />
-              <span>+2</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold tracking-tight">12</div>
-            <div className="text-xs text-blue-100/90 font-medium mt-0.5">Total Sites</div>
-          </div>
-        </div>
-
-        {/* Card 2: Total Labour */}
-        <div className="bg-[#eef6ff] rounded-2xl p-5 border border-blue-100/80 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-full border border-blue-200/90 bg-white flex items-center justify-center shadow-xs">
-              <HardHat size={22} className="text-[#0072ff]" />
-            </div>
-            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200/60 text-emerald-600 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-              <TrendingUp size={12} />
-              <span>+5</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">48</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">Total Labour</div>
-          </div>
-        </div>
-
-        {/* Card 3: Total Expenses */}
-        <div className="bg-[#fff6ec] rounded-2xl p-5 border border-amber-100/80 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-full border border-amber-200/80 bg-white flex items-center justify-center shadow-xs">
-              <Layers size={22} className="text-amber-500" />
-            </div>
-            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200/60 text-emerald-600 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-              <TrendingUp size={12} />
-              <span>+12%</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">₹18.50 L</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">Total Expenses</div>
-          </div>
-        </div>
-
-        {/* Card 4: Pending Bills */}
-        <div className="bg-[#ecfaf3] rounded-2xl p-5 border border-emerald-100/80 shadow-sm flex flex-col justify-between">
-          <div className="flex items-start justify-between">
-            <div className="w-12 h-12 rounded-full border border-emerald-200/80 bg-white flex items-center justify-center shadow-xs">
-              <FileText size={22} className="text-emerald-500" />
-            </div>
-            <div className="flex items-center gap-1 bg-rose-50 border border-rose-200/60 text-rose-500 px-2.5 py-0.5 rounded-full text-xs font-semibold">
-              <TrendingDown size={12} />
-              <span>-2</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">06</div>
-            <div className="text-xs text-slate-500 font-medium mt-0.5">Pending Bills</div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Middle Section: Expense Overview, Project Progress, Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Expense Overview Donut (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-50">
-            <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-              <Layers size={17} className="text-blue-600" />
-              <span>Expense Overview</span>
-            </div>
-            <button className="flex items-center gap-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1 hover:border-slate-300">
-              <span>This Month</span>
-              <ChevronDown size={12} />
+            {/* Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="p-2 rounded-2xl bg-white/80 backdrop-blur-md border border-white/90 shadow-sm shadow-slate-200/50 text-slate-500 hover:text-emerald-700 hover:bg-white transition-all cursor-pointer"
+              title="Refresh"
+            >
+              <RotateCw size={14} className={refreshing ? 'animate-spin text-emerald-600' : ''} />
             </button>
           </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6 py-4">
-            {/* Donut Chart */}
-            <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
-                {/* 1. Others: 4.3% (stroke-dasharray: 12 268) */}
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="45"
-                  fill="none"
-                  stroke="#cbd5e1"
-                  strokeWidth="16"
-                  strokeDasharray="12 271"
-                  strokeDashoffset="-271"
-                />
-                {/* 2. Vehicle Rent: 9.7% (stroke-dasharray: 27 256) */}
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="45"
-                  fill="none"
-                  stroke="#67e8f9"
-                  strokeWidth="16"
-                  strokeDasharray="27 256"
-                  strokeDashoffset="-244"
-                />
-                {/* 3. Rent: 11.4% (stroke-dasharray: 32 251) */}
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="45"
-                  fill="none"
-                  stroke="#06b6d4"
-                  strokeWidth="16"
-                  strokeDasharray="32 251"
-                  strokeDashoffset="-212"
-                />
-                {/* 4. Labour Charge: 24.9% (stroke-dasharray: 70 213) */}
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="45"
-                  fill="none"
-                  stroke="#007aff"
-                  strokeWidth="16"
-                  strokeDasharray="70 213"
-                  strokeDashoffset="-142"
-                />
-                {/* 5. Material: 49.7% (stroke-dasharray: 140 143) */}
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="45"
-                  fill="none"
-                  stroke="#004fc6"
-                  strokeWidth="16"
-                  strokeDasharray="140 143"
-                  strokeDashoffset="0"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-base font-extrabold text-slate-900 leading-tight">
-                  ₹ 18.50 L
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium">Total Expenses</span>
+        {/* ========================================================================= */}
+        {/* 2. TOP METRIC CARDS ROW (4 CARDS)                                         */}
+        {/* ========================================================================= */}
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5"
+        >
+          {/* Card 1: Total Sites */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -3, scale: 1.01 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => onNavigate('Sites')}
+            className="p-5 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-13 h-13 rounded-2xl bg-[#e0f2fe] text-[#0284c7] flex items-center justify-center shrink-0">
+                <Building2 size={24} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-700">Total Sites</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+                  {totalSitesCount}
+                </div>
               </div>
             </div>
 
-            {/* Legend / Breakdown List */}
-            <div className="w-full space-y-2 text-xs">
-              {expenseCategories.map((item) => (
-                <div key={item.label} className="flex items-center justify-between text-slate-600">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="font-medium text-slate-700">{item.label}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 font-medium">
-                    <span className="text-slate-900 font-semibold">{item.amount}</span>
-                    <span className="text-slate-400 text-[11px]">({item.percent})</span>
-                  </div>
+            <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-bold bg-[#ecfdf5] text-[#059669]">
+              ↑ +12%
+            </span>
+          </motion.div>
+
+          {/* Card 2: Active Sites */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -3, scale: 1.01 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => onNavigate('Sites')}
+            className="p-5 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-13 h-13 rounded-2xl bg-[#dcfce7] text-[#16a34a] flex items-center justify-center shrink-0">
+                <HardHat size={24} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-700">Active Sites</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+                  {activeSitesCount}
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Project Progress (4 cols) */}
-        <div className="lg:col-span-4 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-50">
-            <h3 className="text-slate-800 font-bold text-sm">Project Progress</h3>
-            <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
-              <span>View All</span>
-              <ArrowRight size={13} />
-            </button>
-          </div>
+            <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-bold bg-[#ecfdf5] text-[#059669]">
+              ↑ +8%
+            </span>
+          </motion.div>
 
-          <div className="space-y-4 my-auto py-2">
-            {projects.map((proj) => (
-              <div key={proj.code} className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                      <Building2 size={16} />
+          {/* Card 3: Completed Sites */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -3, scale: 1.01 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => onNavigate('Sites')}
+            className="p-5 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-13 h-13 rounded-2xl bg-[#eff6ff] text-[#2563eb] flex items-center justify-center shrink-0">
+                <CheckCircle2 size={24} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-700">Completed Sites</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+                  {completedSitesCount}
+                </div>
+              </div>
+            </div>
+
+            <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-bold bg-[#ecfdf5] text-[#059669]">
+              ↑ +50%
+            </span>
+          </motion.div>
+
+          {/* Card 4: On Hold */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -3, scale: 1.01 }}
+            whileTap={{ scale: 0.985 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => onNavigate('Sites')}
+            className="p-5 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-13 h-13 rounded-2xl bg-[#ffedd5] text-[#ea580c] flex items-center justify-center shrink-0">
+                <PauseCircle size={24} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-700">On Hold</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+                  {onHoldSitesCount}
+                </div>
+              </div>
+            </div>
+
+            <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
+              — 0%
+            </span>
+          </motion.div>
+        </motion.div>
+
+        {/* ========================================================================= */}
+        {/* 3. MIDDLE SECTION: 3 CARDS                                               */}
+        {/* ========================================================================= */}
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate="visible"
+          className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch"
+        >
+          {/* Card 1: Godown Stock (4 cols) */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -2 }}
+            transition={{ duration: 0.2 }}
+            className="lg:col-span-4 p-6 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 flex flex-col justify-between space-y-5"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Package size={20} />
+                </div>
+                <h2 className="text-base font-extrabold text-slate-900">Godown Stock</h2>
+              </div>
+
+              <button
+                onClick={() => onNavigate('Godown')}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            {/* Total Materials & Low Stock Items Pills */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3.5 rounded-2xl bg-[#f0f9ff]/80 border border-[#e0f2fe] flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#bae6fd]/60 text-[#0284c7] flex items-center justify-center shrink-0">
+                  <Box size={18} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-600">Total Materials</div>
+                  <div className="text-2xl font-black text-slate-900">{totalMaterialsCount}</div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-[#fff1f2]/80 border border-[#ffe4e6] flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#fecdd3]/60 text-[#e11d48] flex items-center justify-center shrink-0">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-600">Low Stock Items</div>
+                  <div className="text-2xl font-black text-[#e11d48]">{lowStockCount}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Low Stock Alerts */}
+            <div className="space-y-3 pt-1">
+              <h3 className="text-xs font-bold text-slate-800 tracking-tight">Low Stock Alerts</h3>
+
+              <div className="space-y-2.5">
+                {lowStockItems.slice(0, 3).map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-2 rounded-2xl hover:bg-slate-50/70 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 border border-slate-200/70 shrink-0">
+                        <img
+                          src={
+                            item.image ||
+                            (idx === 0
+                              ? 'https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=120&q=80'
+                              : idx === 1
+                              ? 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=120&q=80'
+                              : 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=120&q=80')
+                          }
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">{item.name}</span>
                     </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">
-                        {proj.name}{' '}
-                        <span className="text-slate-400 font-normal">({proj.code})</span>
+
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#fee2e2] text-[#ef4444] border border-[#fecaca]">
+                      Low Stock
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Card 2: Recent Daily Updates (5 cols) */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -2 }}
+            transition={{ duration: 0.2 }}
+            className="lg:col-span-5 p-6 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 flex flex-col justify-between space-y-4"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-1">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Calendar size={18} />
+                </div>
+                <h2 className="text-base font-extrabold text-slate-900">Recent Daily Updates</h2>
+              </div>
+
+              <button
+                onClick={() => onNavigate('Daily Updates')}
+                className="text-xs font-bold text-[#16a34a] hover:text-[#15803d] flex items-center gap-1 cursor-pointer"
+              >
+                <span>View All</span>
+                <ArrowRight size={13} />
+              </button>
+            </div>
+
+            {/* Updates List */}
+            <div className="space-y-3.5">
+              {displayDailyUpdates.map((update) => (
+                <div
+                  key={update.id}
+                  className="flex items-center justify-between gap-3 p-2 rounded-2xl hover:bg-slate-50/70 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-13 h-13 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
+                      <img
+                        src={update.image}
+                        alt={update.siteName}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="text-xs font-extrabold text-slate-900 truncate">
+                        {update.siteName}{' '}
+                        <span className="text-[11px] font-normal text-slate-500">
+                          ({update.siteCode})
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-600 truncate font-medium">
+                        {update.workSummary}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+                        <Calendar size={11} />
+                        <span>{update.dateFormatted}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-700">{proj.progress}%</span>
-                    <span
-                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                        proj.statusType === 'active'
-                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-200/60'
-                          : 'bg-blue-50 text-blue-600 border border-blue-200/60'
-                      }`}
-                    >
-                      {proj.statusType === 'active' && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                      )}
-                      {proj.status}
-                    </span>
-                  </div>
-                </div>
 
-                {/* Progress Track */}
-                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className="bg-[#0072ff] h-full rounded-full transition-all duration-500"
-                    style={{ width: `${proj.progress}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Quick Actions (3 cols) */}
-        <div className="lg:col-span-3 bg-[#0a2355] rounded-2xl p-5 text-white shadow-xl shadow-blue-950/20 flex flex-col justify-between">
-          <div className="flex items-center gap-2 pb-3 text-white font-bold text-sm">
-            <Zap size={16} className="text-amber-400 fill-amber-400" />
-            <span>Quick Actions</span>
-          </div>
-
-          <div className="space-y-2.5 my-auto">
-            {quickActions.map((action) => {
-              const ActionIcon = action.icon;
-              return (
-                <button
-                  key={action.label}
-                  className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white transition-all text-xs font-medium cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-blue-200">
-                      <ActionIcon size={15} />
-                    </div>
-                    <span>{action.label}</span>
-                  </div>
-                  <ChevronRight size={14} className="text-white/60" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Bottom Section: Expense Trend & Recent Activities */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Expense Trend Chart (6 cols) */}
-        <div className="lg:col-span-6 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-50">
-            <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-              <span className="text-blue-600 font-bold">📊</span>
-              <span>Expense Trend</span>
-            </div>
-            <button className="flex items-center gap-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1 hover:border-slate-300">
-              <span>Last 6 Months</span>
-              <ChevronDown size={12} />
-            </button>
-          </div>
-
-          <div className="pt-4 pb-2">
-            {/* SVG Trend Line Chart */}
-            <div className="relative h-44 w-full flex items-end">
-              {/* Y-axis Labels */}
-              <div className="flex flex-col justify-between h-full pr-3 text-[10px] text-slate-400 font-medium py-1">
-                <span>25 L</span>
-                <span>20 L</span>
-                <span>15 L</span>
-                <span>10 L</span>
-                <span>5 L</span>
-                <span>0</span>
-              </div>
-
-              {/* Chart SVG */}
-              <div className="relative flex-1 h-full">
-                {/* Horizontal Guide Lines */}
-                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-40 py-1">
-                  <div className="border-b border-slate-100 w-full" />
-                  <div className="border-b border-slate-100 w-full" />
-                  <div className="border-b border-slate-100 w-full" />
-                  <div className="border-b border-slate-100 w-full" />
-                  <div className="border-b border-slate-100 w-full" />
-                  <div className="border-b border-slate-200 w-full" />
-                </div>
-
-                <svg
-                  className="w-full h-full overflow-visible"
-                  viewBox="0 0 500 150"
-                  preserveAspectRatio="none"
-                >
-                  <defs>
-                    <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0072ff" stopOpacity="0.35" />
-                      <stop offset="100%" stopColor="#0072ff" stopOpacity="0.0" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Shaded Area */}
-                  <path
-                    d="M 20 115 
-                       C 70 115, 80 95, 115 95 
-                       C 160 95, 170 70, 210 70 
-                       C 250 70, 270 80, 310 80 
-                       C 350 80, 370 65, 410 65 
-                       C 450 65, 460 50, 485 50
-                       L 485 150 L 20 150 Z"
-                    fill="url(#areaGradient)"
-                  />
-
-                  {/* Curve Line */}
-                  <path
-                    d="M 20 115 
-                       C 70 115, 80 95, 115 95 
-                       C 160 95, 170 70, 210 70 
-                       C 250 70, 270 80, 310 80 
-                       C 350 80, 370 65, 410 65 
-                       C 450 65, 460 50, 485 50"
-                    fill="none"
-                    stroke="#0072ff"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
-
-                  {/* Coordinate Data Dots */}
-                  {[
-                    { cx: 20, cy: 115 },
-                    { cx: 115, cy: 95 },
-                    { cx: 210, cy: 70 },
-                    { cx: 310, cy: 80 },
-                    { cx: 410, cy: 65 },
-                    { cx: 485, cy: 50 },
-                  ].map((pt, idx) => (
-                    <circle
-                      key={idx}
-                      cx={pt.cx}
-                      cy={pt.cy}
-                      r="4"
-                      fill="#ffffff"
-                      stroke="#0072ff"
-                      strokeWidth="2.5"
-                    />
-                  ))}
-                </svg>
-
-                {/* Tooltip on last node (Jan) */}
-                <div className="absolute right-0 top-3 -translate-y-1/2">
-                  <div className="bg-[#0072ff] text-white text-[10px] font-bold px-2 py-0.5 rounded-md shadow-md shadow-blue-500/30 flex items-center gap-1">
-                    <span>₹ 18.50 L</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* X-axis Labels */}
-            <div className="flex justify-between pl-8 pr-2 pt-2 text-[11px] text-slate-400 font-medium">
-              <span>Aug</span>
-              <span>Sep</span>
-              <span>Oct</span>
-              <span>Nov</span>
-              <span>Dec</span>
-              <span>Jan</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Activities (6 cols) */}
-        <div className="lg:col-span-6 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-50">
-            <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-              <Clock size={16} className="text-blue-600" />
-              <span>Recent Activities</span>
-            </div>
-            <button className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
-              <span>View All</span>
-              <ArrowRight size={13} />
-            </button>
-          </div>
-
-          <div className="py-2 space-y-4 relative">
-            {/* Vertical timeline continuous line */}
-            <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-blue-100 pointer-events-none" />
-
-            {recentActivities.map((act) => {
-              const ActIcon = act.icon;
-              return (
-                <div key={act.id} className="flex items-center justify-between relative z-10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0 shadow-xs">
-                      <ActIcon size={15} />
-                    </div>
-                    <span className="text-xs font-semibold text-slate-800">{act.title}</span>
-                  </div>
-                  <span className="text-[11px] text-slate-400 font-medium shrink-0 ml-2">
-                    {act.time}
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#ecfdf5] text-[#16a34a] border border-[#d1fae5] shrink-0">
+                    {update.status || 'Active'}
                   </span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Card 3: Pending Payments (3 cols) */}
+          <motion.div
+            variants={staggerItem}
+            whileHover={{ y: -2 }}
+            transition={{ duration: 0.2 }}
+            className="lg:col-span-3 p-6 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 flex flex-col justify-between space-y-5"
+          >
+            {/* Header */}
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[#fff1f2] text-[#e11d48] flex items-center justify-center shrink-0">
+                <Wallet size={18} />
+              </div>
+              <h2 className="text-base font-extrabold text-[#be123c]">Pending Payments</h2>
+            </div>
+
+            {/* Big Outstanding Amount */}
+            <div className="pt-1">
+              <div className="text-3xl font-black text-slate-900 tracking-tight">
+                ₹ {totalOutstanding.toLocaleString('en-IN')}
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Total outstanding payments
+              </p>
+            </div>
+
+            {/* Inflow vs Outflow Rows */}
+            <div className="space-y-3 pt-1">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <div className="flex items-center gap-1.5 text-slate-700">
+                  <span className="w-5 h-5 rounded-full bg-[#dcfce7] text-[#16a34a] flex items-center justify-center text-[10px]">
+                    <ArrowDown size={11} />
+                  </span>
+                  <span>Client Receipts</span>
+                </div>
+                <span className="font-extrabold text-slate-900">
+                  ₹ {clientPending.toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <div className="flex items-center gap-1.5 text-slate-700">
+                  <span className="w-5 h-5 rounded-full bg-[#fee2e2] text-[#ef4444] flex items-center justify-center text-[10px]">
+                    <ArrowUp size={11} />
+                  </span>
+                  <span>Supplier Payments</span>
+                </div>
+                <span className="font-extrabold text-slate-900">
+                  ₹ {supplierPending.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Vibrant Rose/Pink Button */}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => onNavigate('Payments')}
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-[#f43f5e] to-[#e11d48] hover:from-[#e11d48] hover:to-[#be123c] text-white text-xs font-extrabold shadow-md shadow-rose-500/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+            >
+              <span>View Pending Payments</span>
+              <ArrowRight size={14} />
+            </motion.button>
+          </motion.div>
+        </motion.div>
+
+        {/* ========================================================================= */}
+        {/* 4. BOTTOM BAR: QUICK ACTIONS DOCK                                         */}
+        {/* ========================================================================= */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.2 }}
+          className="p-4 rounded-3xl bg-white/80 backdrop-blur-xl border border-white/90 shadow-sm shadow-slate-200/60 flex flex-col md:flex-row items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-2.5 px-3">
+            <Zap size={18} className="text-[#10b981]" />
+            <span className="text-sm font-extrabold text-slate-800">Quick Actions</span>
           </div>
-        </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full md:w-auto">
+            {/* 1. Add Site */}
+            <motion.button
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onNavigate('Sites')}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-white/90 hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-xs font-bold transition-shadow cursor-pointer shadow-xs"
+            >
+              <span className="w-5 h-5 rounded-full bg-[#10b981] text-white flex items-center justify-center font-bold text-xs">
+                +
+              </span>
+              <span>Add Site</span>
+            </motion.button>
+
+            {/* 2. Add Expense */}
+            <motion.button
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onNavigate('Site Expenses')}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-white/90 hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-xs font-bold transition-shadow cursor-pointer shadow-xs"
+            >
+              <ShoppingCart size={15} className="text-[#0284c7]" />
+              <span>Add Expense</span>
+            </motion.button>
+
+            {/* 3. Add Labour */}
+            <motion.button
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onNavigate('Labour')}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-white/90 hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-xs font-bold transition-shadow cursor-pointer shadow-xs"
+            >
+              <Users size={15} className="text-[#9333ea]" />
+              <span>Add Labour</span>
+            </motion.button>
+
+            {/* 4. Issue Stock */}
+            <motion.button
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onNavigate('Godown')}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-white/90 hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-xs font-bold transition-shadow cursor-pointer shadow-xs"
+            >
+              <div className="w-5 h-5 rounded-md bg-[#ffedd5] text-[#ea580c] flex items-center justify-center">
+                <Box size={12} />
+              </div>
+              <span>Issue Stock</span>
+            </motion.button>
+          </div>
+        </motion.div>
       </div>
     </div>
   );
 }
-

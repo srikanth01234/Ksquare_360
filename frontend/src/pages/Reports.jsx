@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BarChart3,
   Building2,
@@ -17,113 +17,53 @@ import {
   Layers,
   TrendingUp,
 } from 'lucide-react';
+import { siteApi, reportApi } from '../services/api';
 
 export default function Reports() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReport, setSelectedReport] = useState(null);
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const siteReports = [
-    {
-      id: 1,
-      title: 'Dream House',
-      subtitle: 'New Residential Building',
-      status: 'Completed',
-      statusType: 'completed',
-      progress: '100%',
-      expenses: '₹ 18,00,000',
-      labour: '8',
-      completionDate: '15 Oct 2026',
-      client: 'Ravi',
-      location: 'Trichy',
-      themeColor: 'emerald',
-      iconBg: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-      bottomWave: 'from-emerald-400/20 to-transparent',
-    },
-    {
-      id: 2,
-      title: 'Office Renovation',
-      subtitle: 'Commercial Renovation',
-      status: 'Completed',
-      statusType: 'completed',
-      progress: '100%',
-      expenses: '₹ 5,40,000',
-      labour: '5',
-      completionDate: '28 Sep 2026',
-      client: 'Kumar',
-      location: 'Madurai',
-      themeColor: 'purple',
-      iconBg: 'bg-purple-50 text-purple-600 border-purple-100',
-      bottomWave: 'from-purple-400/20 to-transparent',
-    },
-    {
-      id: 3,
-      title: 'Kannan Residency',
-      subtitle: 'Individual Villa',
-      status: 'Completed',
-      statusType: 'completed',
-      progress: '100%',
-      expenses: '₹ 22,50,000',
-      labour: '12',
-      completionDate: '10 Aug 2026',
-      client: 'Kannan M',
-      location: 'Chennai',
-      themeColor: 'teal',
-      iconBg: 'bg-teal-50 text-teal-600 border-teal-100',
-      bottomWave: 'from-teal-400/20 to-transparent',
-    },
-    {
-      id: 4,
-      title: 'Royal Arcade',
-      subtitle: 'Commercial Complex Handover',
-      status: 'Completed',
-      statusType: 'completed',
-      progress: '100%',
-      expenses: '₹ 38,00,000',
-      labour: '15',
-      completionDate: '01 Jul 2026',
-      client: 'Arun Kumar',
-      location: 'Coimbatore',
-      themeColor: 'blue',
-      iconBg: 'bg-sky-50 text-sky-600 border-sky-100',
-      bottomWave: 'from-sky-400/20 to-transparent',
-    },
-    {
-      id: 5,
-      title: 'Green Valley Rowhouses',
-      subtitle: 'Residential Housing',
-      status: 'Completed',
-      statusType: 'completed',
-      progress: '100%',
-      expenses: '₹ 29,40,000',
-      labour: '10',
-      completionDate: '20 May 2026',
-      client: 'Vignesh Group',
-      location: 'Madurai',
-      themeColor: 'amber',
-      iconBg: 'bg-amber-50 text-amber-600 border-amber-100',
-      bottomWave: 'from-amber-400/20 to-transparent',
-    },
-    {
-      id: 6,
-      title: 'Palm Grove Duplex',
-      subtitle: 'Luxury Duplex Handover',
-      status: 'Completed',
-      statusType: 'completed',
-      progress: '100%',
-      expenses: '₹ 16,80,000',
-      labour: '6',
-      completionDate: '12 Mar 2026',
-      client: 'Sathish Kumar',
-      location: 'Thoothukudi',
-      themeColor: 'rose',
-      iconBg: 'bg-rose-50 text-rose-600 border-rose-100',
-      bottomWave: 'from-rose-400/20 to-transparent',
-    },
-  ];
+  useEffect(() => {
+    loadReports();
+  }, []);
 
-  const filteredReports = siteReports.filter((r) =>
+  const loadReports = async () => {
+    try {
+      setLoading(true);
+      const res = await siteApi.getAll();
+      const list = res.data || res || [];
+      const completed = list.filter((s) => s.status === 'Completed');
+      const formatted = completed.map((s, idx) => ({
+        id: s._id || s.id || idx + 1,
+        title: s.name,
+        subtitle: s.type || 'Construction Project',
+        status: 'Completed',
+        statusType: 'completed',
+        progress: '100%',
+        expenses: s.projectBudget ? `₹ ${Number(s.projectBudget).toLocaleString('en-IN')}` : '₹ 0',
+        labour: 'Completed',
+        completionDate: s.expectedDate ? new Date(s.expectedDate).toLocaleDateString('en-IN') : 'Completed',
+        client: s.client || 'Client',
+        location: s.location || 'Tamil Nadu',
+        themeColor: 'emerald',
+        iconBg: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+        bottomWave: 'from-emerald-400/20 to-transparent',
+      }));
+      setReports(formatted);
+    } catch (err) {
+      console.warn('Could not load completed sites:', err.message);
+      setReports([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredReports = reports.filter((r) =>
     r.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.subtitle.toLowerCase().includes(searchQuery.toLowerCase())
+    r.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    r.client.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -163,7 +103,14 @@ export default function Reports() {
 
       {/* 2. Site Reports Grid (3 Columns) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredReports.map((site) => (
+        {filteredReports.length === 0 ? (
+          <div className="col-span-full bg-white rounded-3xl border border-slate-100 p-12 text-center text-slate-400">
+            <CheckCircle2 size={36} className="mx-auto mb-2 text-slate-300 opacity-60" />
+            <p className="font-bold text-slate-700 text-sm">No completed sites archived yet</p>
+            <p className="text-xs text-slate-400 mt-0.5">Projects marked as 'Completed' will appear here as handover records.</p>
+          </div>
+        ) : (
+          filteredReports.map((site) => (
           <div
             key={site.id}
             className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 flex flex-col justify-between relative overflow-hidden transition-all duration-300 hover:shadow-md hover:border-slate-200"
@@ -265,7 +212,7 @@ export default function Reports() {
               className={`absolute bottom-0 right-0 w-32 h-16 pointer-events-none rounded-br-3xl bg-gradient-to-tl ${site.bottomWave}`}
             />
           </div>
-        ))}
+        )))}
       </div>
 
       {/* 3. Detailed Site Report Modal */}

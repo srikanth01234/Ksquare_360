@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileText,
   Layers,
@@ -24,6 +24,7 @@ import {
   Clock,
   AlertCircle,
 } from 'lucide-react';
+import { invoiceApi, siteApi } from '../services/api';
 
 export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
   const [activeTab, setActiveTab] = useState('Invoices');
@@ -41,69 +42,57 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
     { id: 'Invoice Settings', label: 'Invoice Settings', icon: Settings },
   ];
 
-  // Invoices List
-  const [invoices, setInvoices] = useState([
-    {
-      id: 'INV-0024',
-      client: 'Mr. Rajesh Kumar',
-      project: 'Villa Construction',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      date: '01 Nov 2026',
-      amount: '₹ 12,50,000',
-      received: '₹ 7,50,000',
-      balance: '₹ 5,00,000',
-      status: 'Partial',
-    },
-    {
-      id: 'INV-0023',
-      client: 'Ms. Priya Menon',
-      project: 'Residence Building',
-      siteName: 'RK Residence',
-      siteCode: 'KS-004',
-      date: '28 Oct 2026',
-      amount: '₹ 8,00,000',
-      received: '₹ 8,00,000',
-      balance: '₹ 0',
-      status: 'Paid',
-    },
-    {
-      id: 'INV-0022',
-      client: 'Metro Builders',
-      project: 'Apartment Block',
-      siteName: 'Metro Apartment',
-      siteCode: 'KS-005',
-      date: '25 Oct 2026',
-      amount: '₹ 15,75,000',
-      received: '₹ 10,25,000',
-      balance: '₹ 5,50,000',
-      status: 'Partial',
-    },
-    {
-      id: 'INV-0021',
-      client: 'Mr. Arvind Nathan',
-      project: 'Office Renovation',
-      siteName: 'Office Renovation',
-      siteCode: 'KS-002',
-      date: '20 Oct 2026',
-      amount: '₹ 5,00,000',
-      received: '₹ 0',
-      balance: '₹ 5,00,000',
-      status: 'Pending',
-    },
-    {
-      id: 'INV-0020',
-      client: 'Lotus Developers',
-      project: 'Commercial Building',
-      siteName: 'Lotus Heights',
-      siteCode: 'KS-006',
-      date: '18 Oct 2026',
-      amount: '₹ 7,50,000',
-      received: '₹ 7,50,000',
-      balance: '₹ 0',
-      status: 'Paid',
-    },
-  ]);
+  // Live Invoices List from MongoDB Atlas
+  const [invoices, setInvoices] = useState([]);
+  const [sitesList, setSitesList] = useState([]);
+
+  useEffect(() => {
+    loadInvoices();
+    loadSites();
+  }, []);
+
+  const loadSites = async () => {
+    try {
+      const res = await siteApi.getAll();
+      setSitesList(res.data || res || []);
+    } catch (err) {
+      console.warn('Could not fetch sites in BillingInvoices:', err.message);
+    }
+  };
+
+  const loadInvoices = async () => {
+    try {
+      const res = await invoiceApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((inv, idx) => {
+        const total = typeof inv.totalAmount === 'number' ? inv.totalAmount : parseFloat(String(inv.totalAmount || inv.amount || 0).replace(/[^\d.]/g, '')) || 0;
+        const paid = typeof inv.paidAmount === 'number' ? inv.paidAmount : (typeof inv.receivedAmount === 'number' ? inv.receivedAmount : 0);
+        const balance = typeof inv.balanceDue === 'number' ? inv.balanceDue : (typeof inv.balanceAmount === 'number' ? inv.balanceAmount : Math.max(0, total - paid));
+        const rawDate = inv.issueDate || inv.invoiceDate;
+
+        return {
+          ...inv,
+          id: inv.invoiceNumber || inv._id || `INV-${String(idx + 1).padStart(4, '0')}`,
+          client: inv.clientName || inv.client || 'Client',
+          project: inv.siteName || (inv.site?.name) || 'Construction Project',
+          siteName: inv.siteName || (inv.site?.name) || 'Site',
+          siteCode: inv.siteCode || (inv.site?.code) || '',
+          date: rawDate ? new Date(rawDate).toLocaleDateString('en-IN') : 'Recent',
+          totalNum: total,
+          paidNum: paid,
+          balanceNum: balance,
+          amount: `₹ ${total.toLocaleString('en-IN')}`,
+          received: `₹ ${paid.toLocaleString('en-IN')}`,
+          balance: `₹ ${balance.toLocaleString('en-IN')}`,
+          status: inv.status || 'Draft',
+        };
+      });
+      setInvoices(formatted);
+    } catch (err) {
+      console.warn('Could not fetch invoices from backend:', err.message);
+      setInvoices([]);
+    }
+  };
 
   const toggleSelectAll = (e) => {
     if (e.target.checked) {
@@ -121,8 +110,15 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
     }
   };
 
-  const handleDeleteInvoice = (id) => {
-    setInvoices(invoices.filter((inv) => inv.id !== id));
+  const handleDeleteInvoice = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this invoice?')) return;
+    try {
+      await invoiceApi.delete(id);
+      await loadInvoices();
+    } catch (err) {
+      console.warn('API invoice delete error:', err.message);
+      setInvoices(invoices.filter((inv) => inv.id !== id && inv._id !== id));
+    }
   };
 
   const filteredInvoices = invoices.filter((inv) => {
@@ -178,7 +174,7 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
           <div>
             <div className="text-xs text-slate-500 font-medium">Total Invoiced</div>
             <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹ 48,75,000
+              ₹ {invoices.reduce((sum, inv) => sum + (inv.totalNum || 0), 0).toLocaleString('en-IN')}
             </div>
           </div>
         </div>
@@ -191,7 +187,7 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
           <div>
             <div className="text-xs text-slate-500 font-medium">Total Received</div>
             <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹ 36,20,000
+              ₹ {invoices.reduce((sum, inv) => sum + (inv.paidNum || 0), 0).toLocaleString('en-IN')}
             </div>
           </div>
         </div>
@@ -204,7 +200,7 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
           <div>
             <div className="text-xs text-slate-500 font-medium">Pending Amount</div>
             <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹ 12,55,000
+              ₹ {invoices.reduce((sum, inv) => sum + (inv.balanceNum || 0), 0).toLocaleString('en-IN')}
             </div>
           </div>
         </div>
@@ -217,7 +213,7 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
           <div>
             <div className="text-xs text-slate-500 font-medium">Total Invoices</div>
             <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              24
+              {invoices.length}
             </div>
           </div>
         </div>
@@ -270,11 +266,11 @@ export default function BillingInvoices({ onCreateInvoiceClick = () => {} }) {
               className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs cursor-pointer"
             >
               <option value="All Sites">All Sites</option>
-              <option value="Green Villa">Green Villa</option>
-              <option value="RK Residence">RK Residence</option>
-              <option value="Metro Apartment">Metro Apartment</option>
-              <option value="Office Renovation">Office Renovation</option>
-              <option value="Lotus Heights">Lotus Heights</option>
+              {sitesList.map((s) => (
+                <option key={s._id || s.id} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
             </select>
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Building2,
   HardHat,
@@ -16,8 +16,10 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  FolderOpen,
 } from 'lucide-react';
 import AddSiteModal from '../components/AddSiteModal';
+import { siteApi } from '../services/api';
 
 export default function Sites({ onSelectSite = () => {} }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -25,82 +27,75 @@ export default function Sites({ onSelectSite = () => {} }) {
   const [selectedLocation, setSelectedLocation] = useState('All Locations');
   const [selectedType, setSelectedType] = useState('All Site Types');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
+  const [loading, setLoading] = useState(false);
 
-  // Initial Sites Data (Active & Ongoing Projects only - Completed sites are in Completed Sites section)
-  const [sites, setSites] = useState([
-    {
-      id: '01',
-      code: 'CHN-11-2026-NB-01',
-      name: 'Green Villa',
-      client: 'Arun Kumar',
-      clientAvatar: 'A',
-      type: 'New Building',
-      location: 'Chennai',
-      budget: '₹25,00,000',
-      progress: 75,
-      status: 'Active',
-    },
-    {
-      id: '02',
-      code: 'MDU-10-2026-RE-02',
-      name: 'Office Renovation',
-      client: 'Kumar',
-      clientAvatar: 'K',
-      type: 'Renovation',
-      location: 'Madurai',
-      budget: '₹8,00,000',
-      progress: 48,
-      status: 'Active',
-    },
-    {
-      id: '03',
-      code: 'TNV-09-2026-NB-03',
-      name: 'RK Residence',
-      client: 'Suresh',
-      clientAvatar: 'S',
-      type: 'New Building',
-      location: 'Tirunelveli',
-      budget: '₹32,00,000',
-      progress: 30,
-      status: 'On Hold',
-    },
-    {
-      id: '04',
-      code: 'CHN-08-2026-NB-04',
-      name: 'Metro Apartment',
-      client: 'Manikandan',
-      clientAvatar: 'M',
-      type: 'New Building',
-      location: 'Chennai',
-      budget: '₹18,00,000',
-      progress: 60,
-      status: 'Active',
-    },
-    {
-      id: '05',
-      code: 'TRY-05-2026-NB-05',
-      name: 'Sunshine Enclave',
-      client: 'Ganesh',
-      clientAvatar: 'G',
-      type: 'New Building',
-      location: 'Trichy',
-      budget: '₹28,00,000',
-      progress: 100,
-      status: 'Completed',
-    },
-  ]);
+  // Live Sites Data from MongoDB Atlas
+  const [sites, setSites] = useState([]);
 
-  const handleAddSite = (newSiteData) => {
-    const formattedSite = {
-      ...newSiteData,
-      id: String(sites.length + 1).padStart(2, '0'),
-      clientAvatar: newSiteData.client ? newSiteData.client[0].toUpperCase() : 'C',
-    };
-    setSites([formattedSite, ...sites]);
+  // Fetch sites on component mount
+  useEffect(() => {
+    loadSites();
+  }, []);
+
+  const loadSites = async () => {
+    try {
+      setLoading(true);
+      const res = await siteApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((s, idx) => ({
+        ...s,
+        id: s._id || s.id || String(idx + 1).padStart(2, '0'),
+        clientAvatar: s.client ? s.client[0].toUpperCase() : 'C',
+        budget: s.budget || (s.projectBudget ? `₹${Number(s.projectBudget).toLocaleString('en-IN')}` : '₹0'),
+        progress: s.progress ?? (s.status === 'Completed' ? 100 : s.status === 'On Hold' ? 30 : 15),
+      }));
+      setSites(formatted);
+    } catch (err) {
+      console.warn('Could not fetch sites from backend, starting with clean list:', err.message);
+      setSites([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeleteSite = (id) => {
-    setSites(sites.filter((site) => site.id !== id));
+  const handleAddSite = async (newSiteData) => {
+    try {
+      // Send directly to MongoDB API
+      const res = await siteApi.create({
+        name: newSiteData.name,
+        code: newSiteData.code,
+        client: newSiteData.client,
+        contact: newSiteData.contact || '',
+        type: newSiteData.type,
+        location: newSiteData.location,
+        address: newSiteData.address || '',
+        startDate: newSiteData.startDate,
+        expectedDate: newSiteData.expectedDate,
+        projectBudget: typeof newSiteData.budget === 'number'
+          ? newSiteData.budget
+          : parseFloat(String(newSiteData.budget || '').replace(/[^\d.]/g, '')) || 0,
+        status: newSiteData.status || 'Active',
+      });
+      await loadSites();
+    } catch (err) {
+      console.warn('API create fallback to local state:', err.message);
+      const formattedSite = {
+        ...newSiteData,
+        id: String(sites.length + 1).padStart(2, '0'),
+        clientAvatar: newSiteData.client ? newSiteData.client[0].toUpperCase() : 'C',
+      };
+      setSites([formattedSite, ...sites]);
+    }
+  };
+
+  const handleDeleteSite = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this site?')) return;
+    try {
+      await siteApi.delete(id);
+      await loadSites();
+    } catch (err) {
+      setSites(sites.filter((site) => site.id !== id && site._id !== id));
+    }
   };
 
   // Filtered sites by Search, Location, Type, and the 3 Site Statuses
@@ -111,7 +106,9 @@ export default function Sites({ onSelectSite = () => {} }) {
       site.code.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesLocation =
-      selectedLocation === 'All Locations' || site.location === selectedLocation;
+      selectedLocation === 'All Locations' ||
+      site.location === selectedLocation ||
+      (site.location && site.location.includes(selectedLocation));
 
     const matchesType =
       selectedType === 'All Site Types' || site.type === selectedType;
@@ -156,7 +153,7 @@ export default function Sites({ onSelectSite = () => {} }) {
             <Building2 size={26} />
           </div>
           <div>
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">24</div>
+            <div className="text-3xl font-extrabold text-slate-900 tracking-tight">{sites.length}</div>
             <div className="text-xs text-slate-500 font-medium mt-0.5">Total Sites</div>
           </div>
         </div>
@@ -294,7 +291,16 @@ export default function Sites({ onSelectSite = () => {} }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredSites.map((site) => (
+              {filteredSites.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="py-12 text-center text-slate-400">
+                    <Building2 className="w-10 h-10 mx-auto mb-2 text-slate-300 opacity-60" />
+                    <p className="font-bold text-slate-700 text-sm">No construction sites found</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Click "Add New Site" above to create your first real project.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredSites.map((site) => (
                 <tr key={site.id} className="hover:bg-slate-50/70 transition-colors">
                   {/* Number */}
                   <td className="py-4 px-4 text-center font-medium text-slate-400">
@@ -413,7 +419,7 @@ export default function Sites({ onSelectSite = () => {} }) {
                     </div>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>

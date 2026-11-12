@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Wallet,
   Coins,
@@ -32,6 +32,7 @@ import {
   Zap,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
+import { expenseApi, siteApi } from '../services/api';
 
 export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExpenses = null }) {
   const [activeTab, setActiveTab] = useState('All Expenses');
@@ -40,6 +41,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
   const [selectedStatus, setSelectedStatus] = useState('All Payment Status');
   const [viewMode, setViewMode] = useState('list');
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
 
   // Category Tabs
   const categoryTabs = [
@@ -52,111 +54,87 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
     { id: 'Other Expenses', label: 'Other Expenses', icon: MoreHorizontal },
   ];
 
-  // Initial Expenses List
-  const [expenses, setExpenses] = useState([
-    {
-      id: '01',
-      date: '01 Nov 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Materials',
-      categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-      categoryIcon: Layers,
-      description: 'Cement – 50 Bags',
-      supplier: 'SM Traders',
-      amount: '₹18,000',
-      paymentStatus: 'Paid',
-    },
-    {
-      id: '02',
-      date: '01 Nov 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Labour',
-      categoryColor: 'bg-sky-50 text-sky-700 border-sky-200/80',
-      categoryIcon: Users,
-      description: 'Mason wages – 4 Workers',
-      supplier: '-',
-      amount: '₹4,000',
-      paymentStatus: 'Paid',
-    },
-    {
-      id: '03',
-      date: '31 Oct 2026',
-      siteName: 'RK Residence',
-      siteCode: 'KS-004',
-      category: 'Vehicle Rent',
-      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
-      categoryIcon: Truck,
-      description: 'Lorry rent – Material transport',
-      supplier: 'City Lorry Service',
-      amount: '₹3,500',
-      paymentStatus: 'Pending',
-    },
-    {
-      id: '04',
-      date: '31 Oct 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Rent',
-      categoryColor: 'bg-amber-50 text-amber-800 border-amber-200/80',
-      categoryIcon: Building2,
-      description: 'Equipment rent – Mixer',
-      supplier: 'BuildEquip Rentals',
-      amount: '₹2,000',
-      paymentStatus: 'Paid',
-    },
-    {
-      id: '05',
-      date: '30 Oct 2026',
-      siteName: 'Metro Apartment',
-      siteCode: 'KS-005',
-      category: 'Other',
-      categoryColor: 'bg-slate-100 text-slate-700 border-slate-200',
-      categoryIcon: MoreHorizontal,
-      description: 'Site cleaning & waste removal',
-      supplier: 'CleanWork Services',
-      amount: '₹1,200',
-      paymentStatus: 'Partial',
-    },
-    {
-      id: '06',
-      date: '28 Oct 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Additional Work',
-      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
-      categoryIcon: Zap,
-      description: 'Parapet wall 2ft extension & plastering',
-      supplier: 'Ravi Mason Contractors',
-      amount: '₹35,000',
-      paymentStatus: 'Paid',
-    },
-  ]);
+  // Live Expenses List from MongoDB Atlas
+  const [expenses, setExpenses] = useState([]);
+  const [sitesList, setSitesList] = useState([]);
 
-  const handleAddExpense = (newExp) => {
-    const formatted = {
-      ...newExp,
-      id: String(expenses.length + 1).padStart(2, '0'),
-      categoryColor:
-        newExp.category === 'Materials'
-          ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
-          : newExp.category === 'Labour'
-          ? 'bg-sky-50 text-sky-700 border-sky-200/80'
-          : newExp.category === 'Additional Work'
-          ? 'bg-purple-50 text-purple-700 border-purple-200/80'
-          : newExp.category === 'Vehicle Rent'
-          ? 'bg-purple-50 text-purple-700 border-purple-200/80'
-          : newExp.category === 'Rent'
-          ? 'bg-amber-50 text-amber-800 border-amber-200/80'
-          : 'bg-slate-100 text-slate-700 border-slate-200',
-      categoryIcon: newExp.category === 'Additional Work' ? Zap : Layers,
-    };
-    setExpenses([formatted, ...expenses]);
+  useEffect(() => {
+    loadExpenses();
+    loadSites();
+  }, []);
+
+  const loadSites = async () => {
+    try {
+      const res = await siteApi.getAll();
+      setSitesList(res.data || res || []);
+    } catch (err) {
+      console.warn('Could not fetch sites in SiteExpenses:', err.message);
+    }
   };
 
-  const handleDeleteExpense = (id) => {
-    setExpenses(expenses.filter((item) => item.id !== id));
+  const loadExpenses = async () => {
+    try {
+      const res = await expenseApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((e, idx) => ({
+        ...e,
+        id: e._id || e.id || String(idx + 1).padStart(2, '0'),
+        date: e.date ? new Date(e.date).toLocaleDateString('en-IN') : 'Today',
+        siteName: e.siteName || (e.site?.name) || 'Site',
+        siteCode: e.siteCode || (e.site?.code) || '',
+        category: e.category || 'Other',
+        description: e.description || '-',
+        supplier: e.supplierName || e.vendorName || e.supplier || '-',
+        amount: typeof e.amount === 'number' ? `₹${e.amount.toLocaleString('en-IN')}` : (e.amount || '₹0'),
+        paymentStatus: e.paymentStatus || 'Paid',
+      }));
+      setExpenses(formatted);
+    } catch (err) {
+      console.warn('Could not fetch expenses from backend:', err.message);
+      setExpenses([]);
+    }
+  };
+
+  const handleAddExpense = async (newExp) => {
+    try {
+      const rawAmt = typeof newExp.totalExpenseAmount === 'number'
+        ? newExp.totalExpenseAmount
+        : parseFloat(String(newExp.amount || '').replace(/[^\d.]/g, '')) || 0;
+
+      await expenseApi.create({
+        siteId: newExp.siteId || (sitesList[0]?._id),
+        siteName: newExp.siteName,
+        siteCode: newExp.siteCode,
+        category: newExp.category,
+        description: newExp.description,
+        supplierName: newExp.supplierName || newExp.supplier || '-',
+        amount: rawAmt,
+        paymentStatus: newExp.paymentStatus || 'Paid',
+        paymentMode: newExp.paymentMethod === 'UPI' ? 'UPI (GPay)' : 'Cash',
+        date: newExp.date || new Date().toISOString(),
+        items: newExp.materialItems || [],
+        notes: newExp.notes || '',
+      });
+      await loadExpenses();
+    } catch (err) {
+      console.warn('API expense create fallback:', err.message);
+      const formatted = {
+        ...newExp,
+        id: String(expenses.length + 1).padStart(2, '0'),
+      };
+      setExpenses([formatted, ...expenses]);
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this expense?')) return;
+    try {
+      await expenseApi.delete(id);
+      await loadExpenses();
+    } catch (err) {
+      console.warn('API expense delete fallback:', err.message);
+      setExpenses(expenses.filter((item) => item.id !== id && item._id !== id));
+    }
   };
 
   const currentExpenses = sharedExpenses || expenses;
@@ -184,6 +162,31 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
 
     return matchesTab && matchesSearch && matchesSite && matchesCategory && matchesStatus;
   });
+
+  const totalExpensesAmt = currentExpenses.reduce((sum, e) => {
+    const raw = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount).replace(/[^\d.]/g, '')) || 0;
+    return sum + raw;
+  }, 0);
+
+  const paidExpensesAmt = currentExpenses.reduce((sum, e) => {
+    if (e.paymentStatus === 'Paid') {
+      const raw = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount).replace(/[^\d.]/g, '')) || 0;
+      return sum + raw;
+    }
+    return sum;
+  }, 0);
+
+  const pendingExpensesAmt = Math.max(0, totalExpensesAmt - paidExpensesAmt);
+
+  const additionalWorkAmt = currentExpenses.reduce((sum, e) => {
+    if (e.category === 'Additional Work') {
+      const raw = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount).replace(/[^\d.]/g, '')) || 0;
+      return sum + raw;
+    }
+    return sum;
+  }, 0);
+
+  const formatCurrency = (val) => '₹' + Number(val || 0).toLocaleString('en-IN');
 
   return (
     <div className="p-5 md:p-8 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
@@ -232,13 +235,13 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
             <div>
               <div className="text-xs text-slate-500 font-medium">Total Expenses</div>
               <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-                ₹8,45,000
+                {formatCurrency(totalExpensesAmt)}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1 bg-emerald-100/70 text-emerald-700 px-2 py-0.5 rounded-full text-[11px] font-bold">
             <TrendingUp size={11} />
-            <span>+12%</span>
+            <span>{currentExpenses.length} Records</span>
           </div>
         </div>
 
@@ -251,12 +254,12 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
             <div>
               <div className="text-xs text-slate-500 font-medium">Paid Amount</div>
               <div className="text-2xl font-extrabold text-emerald-700 tracking-tight mt-0.5">
-                ₹6,50,000
+                {formatCurrency(paidExpensesAmt)}
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
-            77%
+            {totalExpensesAmt > 0 ? Math.round((paidExpensesAmt / totalExpensesAmt) * 100) : 0}%
           </span>
         </div>
 
@@ -269,12 +272,12 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
             <div>
               <div className="text-xs text-slate-500 font-medium">Pending Amount</div>
               <div className="text-2xl font-extrabold text-rose-600 tracking-tight mt-0.5">
-                ₹1,95,000
+                {formatCurrency(pendingExpensesAmt)}
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700">
-            23%
+            {totalExpensesAmt > 0 ? Math.round((pendingExpensesAmt / totalExpensesAmt) * 100) : 0}%
           </span>
         </div>
 
@@ -287,7 +290,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
             <div>
               <div className="text-xs text-slate-500 font-medium">Additional Work Expenses</div>
               <div className="text-2xl font-extrabold text-purple-700 tracking-tight mt-0.5">
-                ₹35,000
+                {formatCurrency(additionalWorkAmt)}
               </div>
             </div>
           </div>
@@ -344,9 +347,11 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
               className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs cursor-pointer"
             >
               <option value="All Sites">All Sites</option>
-              <option value="Green Villa">Green Villa</option>
-              <option value="RK Residence">RK Residence</option>
-              <option value="Metro Apartment">Metro Apartment</option>
+              {sitesList.map((s) => (
+                <option key={s._id || s.id} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
             </select>
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
@@ -456,7 +461,16 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredExpenses.map((exp) => {
+              {filteredExpenses.length === 0 ? (
+                <tr>
+                  <td colSpan="9" className="py-12 text-center text-slate-400">
+                    <Wallet className="w-10 h-10 mx-auto mb-2 text-slate-300 opacity-60" />
+                    <p className="font-bold text-slate-700 text-sm">No site expenses recorded</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Click "Add Expense" to log your first material, labour or rental cost.</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredExpenses.map((exp) => {
                 const CatIcon = exp.categoryIcon || Layers;
                 return (
                   <tr key={exp.id} className="hover:bg-slate-50/70 transition-colors">
@@ -557,7 +571,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>
@@ -565,7 +579,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {}, sharedExp
         {/* 7. Pagination Footer */}
         <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-100 gap-3">
           <div className="text-xs text-slate-500 font-medium">
-            Showing 1 – {filteredExpenses.length} of 128 expenses
+            Showing 1 – {filteredExpenses.length} of {currentExpenses.length} expenses
           </div>
 
           <div className="flex items-center gap-1.5">

@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Building2,
@@ -130,21 +131,32 @@ export default function Sidebar({
                 const Icon = item.icon;
                 const isActive = activeNav === item.id;
                 return (
-                  <button
+                  <motion.button
                     key={item.id}
                     onClick={() => setActiveNav(item.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-200 text-left cursor-pointer ${
+                    whileHover={{ x: 3 }}
+                    whileTap={{ scale: 0.98 }}
+                    className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs md:text-sm transition-colors text-left cursor-pointer overflow-hidden ${
                       isActive
-                        ? 'bg-[#0066FF] text-white shadow-lg shadow-blue-600/30 font-bold'
+                        ? 'text-white font-bold'
                         : 'text-slate-200 hover:bg-white/10 hover:text-white font-medium'
                     }`}
                   >
-                    <Icon
-                      size={17}
-                      className={isActive ? 'text-white' : 'text-blue-300'}
-                    />
-                    <span className="truncate">{item.label}</span>
-                  </button>
+                    {isActive && (
+                      <motion.div
+                        layoutId="sidebar-active-pill"
+                        className="absolute inset-0 bg-[#0066FF] rounded-xl shadow-lg shadow-blue-600/30 z-0"
+                        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                      />
+                    )}
+                    <div className="relative z-10 transition-transform duration-150">
+                      <Icon
+                        size={17}
+                        className={isActive ? 'text-white' : 'text-blue-300'}
+                      />
+                    </div>
+                    <span className="truncate relative z-10">{item.label}</span>
+                  </motion.button>
                 );
               })}
             </div>

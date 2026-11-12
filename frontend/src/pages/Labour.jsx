@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   HardHat,
@@ -34,135 +34,139 @@ import {
 } from 'lucide-react';
 import AddLabourModal from '../components/AddLabourModal';
 import { LABOUR_WORKER_TYPES } from '../constants/constructionData';
+import { labourApi, siteApi } from '../services/api';
 
 export default function Labour() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLabour, setEditingLabour] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState('All Sites');
   const [selectedType, setSelectedType] = useState('All Labour Types');
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'grid'
   const [viewingLabour, setViewingLabour] = useState(null); // 'View Labour details' Modal
 
-  // Initial Labour Workers Data with Address, Aadhaar, PAN, and wage rates
-  const [labourList, setLabourList] = useState([
-    {
-      id: '01',
-      name: 'Kumar M',
-      phone: '+91 98765 43210',
-      avatar: 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80',
-      type: 'Mason',
-      typeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-      typeIcon: Wrench,
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      dailyWage: '₹1,000',
-      otRate: '₹100',
-      joiningDate: '10 Jun 2026',
-      status: 'Active',
-      address: '24/1, Gandhi Nagar 2nd St, Velachery, Chennai - 600042',
-      aadhaarNumber: '7842 9012 3456',
-      panNumber: 'BKMPK4521G',
-    },
-    {
-      id: '02',
-      name: 'Ravi S',
-      phone: '+91 98432 76540',
-      avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=200&q=80',
-      type: 'Helper',
-      typeColor: 'bg-sky-50 text-sky-700 border-sky-200/80',
-      typeIcon: Wrench,
-      siteName: 'Office Renovation',
-      siteCode: 'KS-002',
-      dailyWage: '₹700',
-      otRate: '₹80',
-      joiningDate: '12 Jun 2026',
-      status: 'Active',
-      address: '12, West Masi Street, Madurai - 625001',
-      aadhaarNumber: '4521 8901 2345',
-      panNumber: 'AVPPR8912K',
-    },
-    {
-      id: '03',
-      name: 'Mani K',
-      phone: '+91 97890 12345',
-      avatar: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?auto=format&fit=crop&w=200&q=80',
-      type: 'Painter',
-      typeColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
-      typeIcon: Paintbrush,
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      dailyWage: '₹900',
-      otRate: '₹100',
-      joiningDate: '15 Jun 2026',
-      status: 'Active',
-      address: '89, Anna Salai, Tambaram, Chennai - 600045',
-      aadhaarNumber: '9012 3456 7812',
-      panNumber: 'CFRPM7712E',
-    },
-    {
-      id: '04',
-      name: 'Suresh P',
-      phone: '+91 96554 78901',
-      avatar: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=200&q=80',
-      type: 'Carpenter',
-      typeColor: 'bg-amber-50 text-amber-800 border-amber-200/80',
-      typeIcon: Hammer,
-      siteName: 'RK Residence',
-      siteCode: 'KS-004',
-      dailyWage: '₹1,200',
-      otRate: '₹150',
-      joiningDate: '18 Jun 2026',
-      status: 'On Site',
-      address: '15/4, High Ground Road, Palayamkottai, Tirunelveli - 627002',
-      aadhaarNumber: '3412 7890 1234',
-      panNumber: 'DFXPS1190B',
-    },
-    {
-      id: '05',
-      name: 'Selvam R',
-      phone: '+91 94433 22110',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-      type: 'Electrician',
-      typeColor: 'bg-blue-50 text-blue-700 border-blue-200/80',
-      typeIcon: Zap,
-      siteName: 'Metro Apartment',
-      siteCode: 'KS-005',
-      dailyWage: '₹1,100',
-      otRate: '₹120',
-      joiningDate: '20 Jun 2026',
-      status: 'Active',
-    },
-  ]);
+  // Live Labour Workers State from MongoDB Atlas
+  const [labourList, setLabourList] = useState([]);
+  const [sitesList, setSitesList] = useState([]);
 
-  const handleAddLabour = (newWorker) => {
-    const formatted = {
-      ...newWorker,
-      id: String(labourList.length + 1).padStart(2, '0'),
-      typeColor:
-        newWorker.labourType === 'Mason'
-          ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
-          : newWorker.labourType === 'Helper'
-          ? 'bg-sky-50 text-sky-700 border-sky-200/80'
-          : newWorker.labourType === 'Painter'
-          ? 'bg-purple-50 text-purple-700 border-purple-200/80'
-          : 'bg-amber-50 text-amber-800 border-amber-200/80',
-      typeIcon: Wrench,
-    };
-    setLabourList([formatted, ...labourList]);
+  useEffect(() => {
+    loadLabour();
+    loadSites();
+  }, []);
+
+  const loadSites = async () => {
+    try {
+      const res = await siteApi.getAll();
+      setSitesList(res.data || res || []);
+    } catch (err) {
+      console.warn('Could not fetch sites in Labour page:', err.message);
+    }
   };
 
-  const handleDeleteLabour = (id) => {
-    setLabourList(labourList.filter((item) => item.id !== id));
+  const loadLabour = async () => {
+    try {
+      const res = await labourApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((l, idx) => {
+        const siteName = l.siteName || (typeof l.currentSite === 'object' ? l.currentSite?.name : '') || '';
+        const siteCode = l.siteCode || (typeof l.currentSite === 'object' ? l.currentSite?.code : '') || '';
+        return {
+          ...l,
+          id: l._id || l.id || String(idx + 1).padStart(2, '0'),
+          type: l.workerType || l.category || l.type || 'Mason',
+          siteName: siteName || 'Unassigned',
+          siteCode: siteCode,
+          dailyWageNum: typeof l.dailyWage === 'number' ? l.dailyWage : parseFloat(String(l.dailyWage || 0).replace(/[^\d.]/g, '')) || 0,
+          dailyWage: typeof l.dailyWage === 'number' ? `₹${l.dailyWage.toLocaleString('en-IN')}` : (l.dailyWage || '₹0'),
+          otRate: typeof l.overtimeRate === 'number' ? `₹${l.overtimeRate.toLocaleString('en-IN')}` : (l.otRate || '₹0'),
+          joiningDate: l.joiningDate ? new Date(l.joiningDate).toLocaleDateString('en-IN') : 'Recent',
+          status: l.status || 'Active',
+          avatar: l.photoUrl || l.avatar || 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80',
+        };
+      });
+      setLabourList(formatted);
+    } catch (err) {
+      console.warn('Could not fetch labour from backend:', err.message);
+      setLabourList([]);
+    }
+  };
+
+  const handleAddLabour = async (newWorker) => {
+    try {
+      await labourApi.create({
+        name: newWorker.name,
+        workerType: newWorker.workerType || newWorker.labourType,
+        phone: newWorker.phone,
+        currentSite: newWorker.currentSite || newWorker.siteId || null,
+        dailyWage: typeof newWorker.dailyWage === 'number' ? newWorker.dailyWage : parseFloat(String(newWorker.dailyWage || '').replace(/[^\d.]/g, '')) || 800,
+        overtimeRate: typeof newWorker.otRate === 'number' ? newWorker.otRate : parseFloat(String(newWorker.otRate || '').replace(/[^\d.]/g, '')) || 100,
+        address: newWorker.address || '',
+        aadhaarNumber: newWorker.aadhaarNumber || '',
+        panNumber: newWorker.panNumber || '',
+        status: newWorker.status || 'Active',
+        photoUrl: newWorker.photoUrl || '',
+      });
+      await loadLabour();
+    } catch (err) {
+      console.warn('API add labour fallback:', err.message);
+      const formatted = {
+        ...newWorker,
+        id: String(labourList.length + 1).padStart(2, '0'),
+      };
+      setLabourList([formatted, ...labourList]);
+    }
+  };
+
+  const handleEditLabour = async (id, updatedWorker) => {
+    try {
+      await labourApi.update(id, {
+        name: updatedWorker.name,
+        workerType: updatedWorker.workerType || updatedWorker.labourType,
+        phone: updatedWorker.phone,
+        currentSite: updatedWorker.currentSite || updatedWorker.siteId || null,
+        dailyWage: typeof updatedWorker.dailyWage === 'number' ? updatedWorker.dailyWage : parseFloat(String(updatedWorker.dailyWage || '').replace(/[^\d.]/g, '')) || 800,
+        overtimeRate: typeof updatedWorker.otRate === 'number' ? updatedWorker.otRate : parseFloat(String(updatedWorker.otRate || updatedWorker.overtimeRate || '').replace(/[^\d.]/g, '')) || 100,
+        address: updatedWorker.address || '',
+        aadhaarNumber: updatedWorker.aadhaarNumber || '',
+        panNumber: updatedWorker.panNumber || '',
+        status: updatedWorker.status || 'Active',
+        photoUrl: updatedWorker.photoUrl || '',
+      });
+      await loadLabour();
+    } catch (err) {
+      console.warn('API update labour fallback:', err.message);
+      setLabourList((prev) =>
+        prev.map((w) => (w.id === id || w._id === id ? { ...w, ...updatedWorker } : w))
+      );
+    } finally {
+      setEditingLabour(null);
+    }
+  };
+
+  const handleDeleteLabour = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this worker?')) return;
+    try {
+      await labourApi.delete(id);
+      await loadLabour();
+    } catch (err) {
+      console.warn('API delete labour fallback:', err.message);
+      setLabourList(labourList.filter((item) => item.id !== id && item._id !== id));
+    }
   };
 
   const filteredLabour = labourList.filter((worker) => {
+    const sName = worker.siteName || '';
+    const name = String(worker.name || '').toLowerCase();
+    const phone = String(worker.phone || '');
+    const query = searchQuery.toLowerCase();
+
     const matchesSearch =
-      worker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      worker.phone.includes(searchQuery) ||
-      worker.siteName.toLowerCase().includes(searchQuery.toLowerCase());
+      name.includes(query) ||
+      phone.includes(query) ||
+      sName.toLowerCase().includes(query);
 
     const matchesSite =
-      selectedSite === 'All Sites' || worker.siteName === selectedSite;
+      selectedSite === 'All Sites' || sName === selectedSite;
 
     const matchesType =
       selectedType === 'All Labour Types' || worker.type === selectedType;
@@ -220,13 +224,13 @@ export default function Labour() {
             <div>
               <div className="text-xs text-slate-500 font-medium">Total Labour</div>
               <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-                48
+                {labourList.length}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1 bg-emerald-100/70 text-emerald-700 px-2 py-0.5 rounded-full text-[11px] font-bold">
             <TrendingUp size={11} />
-            <span>+8%</span>
+            <span>Active: {labourList.filter((w) => w.status === 'Active').length}</span>
           </div>
         </div>
 
@@ -238,7 +242,7 @@ export default function Labour() {
           <div>
             <div className="text-xs text-slate-500 font-medium">Active Workers</div>
             <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              42
+              {labourList.filter((w) => w.status === 'Active').length}
             </div>
           </div>
         </div>
@@ -249,22 +253,22 @@ export default function Labour() {
             <CalendarCheck size={22} />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Present Today</div>
+            <div className="text-xs text-slate-500 font-medium">Available Workers</div>
             <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              36
+              {labourList.filter((w) => w.status !== 'Inactive').length}
             </div>
           </div>
         </div>
 
-        {/* Pending Wages */}
+        {/* Daily Wage Total */}
         <div className="bg-[#f5f2ff] rounded-2xl p-5 border border-purple-100/80 shadow-xs flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center shrink-0">
             <Wallet size={22} />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Pending Wages</div>
-            <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              ₹1,24,000
+            <div className="text-xs text-slate-500 font-medium">Daily Payroll</div>
+            <div className="text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
+              ₹{labourList.reduce((sum, w) => sum + (w.dailyWageNum || 0), 0).toLocaleString('en-IN')}
             </div>
           </div>
         </div>
@@ -295,10 +299,11 @@ export default function Labour() {
               className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs cursor-pointer"
             >
               <option value="All Sites">All Sites</option>
-              <option value="Green Villa">Green Villa</option>
-              <option value="Office Renovation">Office Renovation</option>
-              <option value="RK Residence">RK Residence</option>
-              <option value="Metro Apartment">Metro Apartment</option>
+              {sitesList.map((s) => (
+                <option key={s._id || s.id} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
             </select>
             <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
@@ -430,7 +435,9 @@ export default function Labour() {
                   {/* Labour Type */}
                   <td className="py-3.5 px-4">
                     <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${worker.typeColor}`}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                        worker.typeColor || 'bg-blue-50 text-blue-700 border-blue-200'
+                      }`}
                     >
                       <Briefcase size={12} />
                       <span>{worker.type}</span>
@@ -474,14 +481,15 @@ export default function Labour() {
                       </button>
                       <button
                         title="Edit Worker"
-                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50/50 transition-colors"
+                        onClick={() => setEditingLabour(worker)}
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50/50 transition-colors cursor-pointer"
                       >
                         <Edit2 size={13} />
                       </button>
                       <button
                         title="Delete Worker"
                         onClick={() => handleDeleteLabour(worker.id)}
-                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors"
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors cursor-pointer"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -534,6 +542,14 @@ export default function Labour() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAddLabour={handleAddLabour}
+      />
+
+      {/* Edit Labour Modal */}
+      <AddLabourModal
+        isOpen={!!editingLabour}
+        onClose={() => setEditingLabour(null)}
+        workerToEdit={editingLabour}
+        onUpdateLabour={handleEditLabour}
       />
 
       {/* View Labour Details Modal */}

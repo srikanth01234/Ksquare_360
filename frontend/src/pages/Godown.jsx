@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Warehouse,
   Package,
@@ -26,6 +26,7 @@ import {
 import AddStockInwardModal from '../components/AddStockInwardModal';
 import IssueStockModal from '../components/IssueStockModal';
 import { INITIAL_MATERIALS } from '../constants/materialsData';
+import { godownApi, siteApi, materialApi } from '../services/api';
 
 export default function Godown({
   materials: externalMaterials,
@@ -42,17 +43,75 @@ export default function Godown({
   const [selectedMaterialForAction, setSelectedMaterialForAction] = useState(null);
 
   // Construction Sites (for Issue modal)
-  const sites = [
-    { code: 'KS-001', name: 'Green Villa', location: 'Chennai' },
-    { code: 'KS-002', name: 'Office Renovation', location: 'Madurai' },
-    { code: 'KS-004', name: 'RK Residence', location: 'Tirunelveli' },
-    { code: 'KS-005', name: 'Metro Apartment', location: 'Chennai' },
-  ];
+  const [sites, setSites] = useState([]);
 
   // Core Materials Inventory (Directly Connected with Master Data)
   const [internalMaterials, setInternalMaterials] = useState(INITIAL_MATERIALS);
   const rawMaterials = externalMaterials || internalMaterials;
   const setRawMaterials = externalSetMaterials || setInternalMaterials;
+
+  // Live Recent Stock Movements History (Inward & Outward Site Dispatches)
+  const [recentMovements, setRecentMovements] = useState([]);
+
+  useEffect(() => {
+    loadGodownData();
+  }, []);
+
+  const loadGodownData = async () => {
+    try {
+      const [stocksRes, movementsRes, sitesRes] = await Promise.allSettled([
+        godownApi.getStocks(),
+        godownApi.getMovements(),
+        siteApi.getAll(),
+      ]);
+
+      if (stocksRes.status === 'fulfilled' && stocksRes.value?.data?.length > 0) {
+        const stocks = stocksRes.value.data.map((s) => ({
+          id: s.materialId || s.stockId,
+          _id: s.materialId,
+          code: s.code,
+          name: s.name,
+          category: s.category,
+          unit: s.unit,
+          price: s.defaultPrice || 0,
+          stock: s.currentStock,
+          availableQuantity: s.currentStock,
+          minStockLevel: s.reorderLevel || 10,
+          minStock: s.reorderLevel || 10,
+          status: s.status || 'Active',
+          image: s.imageUrl || 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
+        }));
+        setRawMaterials(stocks);
+      }
+
+      if (movementsRes.status === 'fulfilled') {
+        const moves = movementsRes.value?.data || movementsRes.value || [];
+        if (moves.length > 0) {
+          setRecentMovements(
+            moves.map((m, idx) => ({
+              id: m._id ? `MOV-${m._id.slice(-4)}` : `MOV-${idx + 1}`,
+              type: m.movementType || 'INWARD',
+              materialName: m.material?.name || m.materialName || 'Material',
+              category: m.material?.category || m.category || 'General',
+              quantity: m.quantity || 0,
+              unit: m.unit || m.material?.unit || 'Units',
+              siteName: m.site?.name ? `${m.site.name} (${m.site.code || ''})` : (m.movementType === 'INWARD' ? 'Main Yard Godown' : 'Site'),
+              date: m.date ? new Date(m.date).toLocaleDateString('en-IN') : 'Recent',
+              issuedTo: m.receivedBy || m.supplierName || 'Supervisor',
+              remarks: m.notes || '-',
+            }))
+          );
+        }
+      }
+
+      if (sitesRes.status === 'fulfilled') {
+        const sList = sitesRes.value?.data || sitesRes.value || [];
+        setSites(sList);
+      }
+    } catch (err) {
+      console.warn('Could not fetch godown data from backend:', err.message);
+    }
+  };
 
   // Normalized inventory ensuring availableQuantity, stock, and minStockLevel are always synchronized
   const inventory = useMemo(() => {
@@ -66,73 +125,9 @@ export default function Godown({
     }));
   }, [rawMaterials]);
 
-  // Live Recent Stock Movements History (Inward & Outward Site Dispatches)
-  const [recentMovements, setRecentMovements] = useState([
-    {
-      id: 'MOV-101',
-      type: 'OUTWARD',
-      materialName: 'Cement',
-      category: 'Cement',
-      quantity: 50,
-      unit: 'Bags',
-      siteName: 'Green Villa (KS-001)',
-      date: '2026-11-04',
-      issuedTo: 'Muthu (Supervisor)',
-      remarks: 'Pillar concrete casting',
-    },
-    {
-      id: 'MOV-102',
-      type: 'INWARD',
-      materialName: 'M-Sand',
-      category: 'Sand',
-      quantity: 20,
-      unit: 'Tons',
-      siteName: 'Main Yard Godown',
-      date: '2026-11-03',
-      issuedTo: 'Store Incharge',
-      remarks: 'Fresh batch received',
-    },
-    {
-      id: 'MOV-103',
-      type: 'OUTWARD',
-      materialName: 'Steel',
-      category: 'Steel',
-      quantity: 800,
-      unit: 'Kg',
-      siteName: 'Office Renovation (KS-002)',
-      date: '2026-11-03',
-      issuedTo: 'Ramesh (Site Engg)',
-      remarks: 'Beam reinforcement bars',
-    },
-    {
-      id: 'MOV-104',
-      type: 'OUTWARD',
-      materialName: 'Solid Block – 6 Inch',
-      category: 'Blocks',
-      quantity: 400,
-      unit: 'Pieces',
-      siteName: 'RK Residence (KS-004)',
-      date: '2026-11-02',
-      issuedTo: 'Suresh (Supervisor)',
-      remarks: 'Ground floor brick work',
-    },
-    {
-      id: 'MOV-105',
-      type: 'INWARD',
-      materialName: 'Cement',
-      category: 'Cement',
-      quantity: 100,
-      unit: 'Bags',
-      siteName: 'Main Yard Godown',
-      date: '2026-11-01',
-      issuedTo: 'Godown Manager',
-      remarks: 'UltraTech direct inward',
-    },
-  ]);
-
   // Unique Categories
   const categories = useMemo(() => {
-    return Array.from(new Set(inventory.map((item) => item.category)));
+    return Array.from(new Set(inventory.map((item) => item.category).filter(Boolean)));
   }, [inventory]);
 
   // Stock status helper
@@ -181,11 +176,16 @@ export default function Godown({
 
   // Filtered Inventory
   const filteredInventory = useMemo(() => {
+    const query = searchQuery.toLowerCase();
     return inventory.filter((item) => {
+      const name = String(item.name || '').toLowerCase();
+      const cat = String(item.category || '').toLowerCase();
+      const codeOrId = String(item.code || item.id || '').toLowerCase();
+
       const matchesSearch =
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.id.toLowerCase().includes(searchQuery.toLowerCase());
+        name.includes(query) ||
+        cat.includes(query) ||
+        codeOrId.includes(query);
 
       const matchesCategory =
         selectedCategory === 'All' || item.category === selectedCategory;
@@ -199,12 +199,49 @@ export default function Godown({
   }, [inventory, searchQuery, selectedCategory, selectedStatus]);
 
   // Save Inward Stock (Updates Master Material Stock & Logs Movement)
-  const handleSaveInward = (inwardData) => {
-    const existingIndex = rawMaterials.findIndex(
+  const handleSaveInward = async (inwardData) => {
+    const existing = rawMaterials.find(
       (m) => m.name.toLowerCase() === inwardData.materialName.toLowerCase()
     );
 
     const addQty = parseFloat(inwardData.quantity) || 0;
+
+    try {
+      let materialId = existing?._id || existing?.id;
+      if (!materialId || String(materialId).startsWith('MAT-')) {
+        // Create material in master catalog first if not already saved in MongoDB
+        const newMatRes = await materialApi.create({
+          name: inwardData.materialName,
+          category: inwardData.category || 'General',
+          unit: inwardData.unit || 'Bags',
+          defaultPrice: inwardData.price || 0,
+        }).catch(() => null);
+        if (newMatRes?.data?._id) {
+          materialId = newMatRes.data._id;
+        }
+      }
+
+      if (materialId && !String(materialId).startsWith('MAT-')) {
+        await godownApi.recordInward({
+          materialId,
+          quantity: addQty,
+          unit: inwardData.unit,
+          unitPrice: inwardData.price || 0,
+          supplierName: 'Godown Inward Desk',
+          notes: inwardData.remarks || 'Stock received in godown',
+          date: inwardData.date,
+        });
+        await loadGodownData();
+        return;
+      }
+    } catch (err) {
+      console.warn('API godown inward fallback:', err.message);
+    }
+
+    // Fallback local update
+    const existingIndex = rawMaterials.findIndex(
+      (m) => m.name.toLowerCase() === inwardData.materialName.toLowerCase()
+    );
 
     if (existingIndex >= 0) {
       setRawMaterials((prev) => {
@@ -243,7 +280,6 @@ export default function Godown({
       setRawMaterials((prev) => [newMat, ...prev]);
     }
 
-    // Append to live movements log
     const newMovement = {
       id: `MOV-${Date.now().toString().slice(-4)}`,
       type: 'INWARD',
@@ -260,12 +296,36 @@ export default function Godown({
   };
 
   // Issue Stock to Site (Reduces Godown Stock & Logs Outward Movement)
-  const handleIssueStock = (issueData) => {
-    const existingIndex = rawMaterials.findIndex(
+  const handleIssueStock = async (issueData) => {
+    const existing = rawMaterials.find(
       (m) => m.name.toLowerCase() === issueData.materialName.toLowerCase()
     );
 
     const issueQty = parseFloat(issueData.quantity) || 0;
+    const materialId = existing?._id || existing?.id;
+    const targetSite = sites.find((s) => s.code === issueData.siteCode || s.name === issueData.siteName) || sites[0];
+
+    try {
+      if (materialId && !String(materialId).startsWith('MAT-') && targetSite?._id) {
+        await godownApi.recordOutward({
+          materialId,
+          siteId: targetSite._id,
+          quantity: issueQty,
+          receivedBy: issueData.issuedTo || 'Site Incharge',
+          notes: issueData.remarks || `Dispatched to ${targetSite.name}`,
+          date: issueData.date,
+        });
+        await loadGodownData();
+        return;
+      }
+    } catch (err) {
+      console.warn('API godown outward fallback:', err.message);
+    }
+
+    // Fallback local update
+    const existingIndex = rawMaterials.findIndex(
+      (m) => m.name.toLowerCase() === issueData.materialName.toLowerCase()
+    );
 
     if (existingIndex >= 0) {
       setRawMaterials((prev) => {
@@ -285,7 +345,6 @@ export default function Godown({
       });
     }
 
-    // Append to live movements log
     const newMovement = {
       id: `MOV-${Date.now().toString().slice(-4)}`,
       type: 'OUTWARD',

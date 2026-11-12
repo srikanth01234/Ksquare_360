@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { modalBackdropVariants, modalContentVariants } from '../utils/animations';
 import {
   X,
   FileSpreadsheet,
@@ -25,6 +27,7 @@ import {
   Coins,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
+import { siteApi } from '../services/api';
 
 // Material type classification helpers
 const isSteelMaterial = (name) => name === 'Steel';
@@ -88,17 +91,34 @@ export default function AddExpenseModal({
   lockedSite = null,
 }) {
   const fileInputRef = useRef(null);
+  const [sitesList, setSitesList] = useState([]);
   const [formData, setFormData] = useState({
     category: 'Materials',
     materialName: 'Cement',
-    site: lockedSite || 'Green Villa (KS-001)',
-    date: '2026-11-01',
-    description: 'Cement - 50 Bags',
-    supplier: 'SM Traders',
+    site: lockedSite || '',
+    siteId: '',
+    date: new Date().toISOString().split('T')[0],
+    description: 'Cement - 50 Bags Purchase',
+    supplier: '',
     invoiceNo: '',
     quantity: '50',
     unit: 'Bags',
     rate: '420',
+    // Labour specific fields
+    labourType: 'Mason',
+    labourContractor: 'Direct Labour',
+    labourWorkersCount: '4',
+    labourDailyWage: '1000',
+    labourDays: '1',
+    // Rental specific fields
+    rentalEquipment: 'JCB / Excavator',
+    rentalVendor: '',
+    rentalDuration: '1',
+    rentalUnit: 'Days',
+    rentalRate: '3000',
+    // Lump sum or direct amount override
+    customAmount: '',
+    // Additional vehicle & tips for Materials
     vehicleType: 'Tata Ace / Mini Truck',
     rentalAmount: '',
     tipsAmount: '',
@@ -108,6 +128,83 @@ export default function AddExpenseModal({
     transactionId: '',
     notes: '',
   });
+
+  // Handle category switching with clean contextual defaults
+  const handleCategoryChange = (newCat) => {
+    let nextDesc = '';
+    let nextSupplier = '';
+    let nextQty = '1';
+    let nextUnit = 'Days';
+    let nextRate = '1000';
+
+    if (newCat === 'Materials') {
+      nextDesc = `${formData.materialName || 'Cement'} - 50 Bags Purchase`;
+      nextQty = '50';
+      nextUnit = 'Bags';
+      nextRate = '420';
+    } else if (newCat === 'Labour') {
+      const role = formData.labourType || 'Mason';
+      const count = formData.labourWorkersCount || '4';
+      nextDesc = `${role} Daily Wages (${count} Workers)`;
+      nextSupplier = formData.labourContractor || 'Direct Labour';
+      nextQty = count;
+      nextUnit = 'Workers';
+      nextRate = formData.labourDailyWage || '1000';
+    } else if (newCat === 'Rental') {
+      const equip = formData.rentalEquipment || 'JCB / Excavator';
+      const dur = formData.rentalDuration || '1';
+      const unit = formData.rentalUnit || 'Days';
+      nextDesc = `${equip} Rental (${dur} ${unit})`;
+      nextSupplier = formData.rentalVendor || '';
+      nextQty = dur;
+      nextUnit = unit;
+      nextRate = formData.rentalRate || '3000';
+    } else if (newCat === 'Additional Work') {
+      nextDesc = 'Additional Site Work';
+      nextSupplier = '';
+      nextQty = '1';
+      nextUnit = 'Job';
+      nextRate = '';
+    } else {
+      nextDesc = 'Miscellaneous Site Expense';
+      nextSupplier = '';
+      nextQty = '1';
+      nextUnit = 'Item';
+      nextRate = '';
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      category: newCat,
+      description: nextDesc,
+      supplier: nextSupplier,
+      quantity: nextQty,
+      unit: nextUnit,
+      rate: nextRate,
+      customAmount: '',
+      rentalAmount: newCat === 'Materials' ? prev.rentalAmount : '',
+      tipsAmount: newCat === 'Materials' ? prev.tipsAmount : '',
+    }));
+  };
+
+  // Load live sites from database
+  useEffect(() => {
+    if (isOpen) {
+      siteApi.getAll().then((res) => {
+        const list = res.data || res || [];
+        setSitesList(list);
+        if (!lockedSite && list.length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            site: prev.site || `${list[0].name} (${list[0].code})`,
+            siteId: prev.siteId || list[0]._id,
+          }));
+        }
+      }).catch((err) => {
+        console.warn('Could not fetch sites for expense modal:', err.message);
+      });
+    }
+  }, [isOpen, lockedSite]);
 
   // Sync locked site if provided
   useEffect(() => {
@@ -126,21 +223,42 @@ export default function AddExpenseModal({
   const [totalAmount, setTotalAmount] = useState(21000);
 
   // Overall Expense Calculations
-  const materialCost = useMemo(() => {
+  const computedAmount = useMemo(() => {
     if (formData.category === 'Materials') {
       return materialItems.reduce(
         (sum, it) => sum + (parseFloat(it.amount) || 0),
         0
       );
     }
-    const qty = parseFloat(formData.quantity) || 0;
-    const rate = parseFloat(formData.rate) || 0;
-    return qty * rate;
-  }, [formData.category, formData.quantity, formData.rate, materialItems]);
+    if (formData.category === 'Labour') {
+      if (formData.customAmount) return parseFloat(formData.customAmount) || 0;
+      const count = parseFloat(formData.labourWorkersCount) || 1;
+      const wage = parseFloat(formData.labourDailyWage) || 0;
+      const days = parseFloat(formData.labourDays) || 1;
+      return count * wage * days;
+    }
+    if (formData.category === 'Rental') {
+      if (formData.customAmount) return parseFloat(formData.customAmount) || 0;
+      const dur = parseFloat(formData.rentalDuration) || 1;
+      const rate = parseFloat(formData.rentalRate) || 0;
+      return dur * rate;
+    }
+    return parseFloat(formData.customAmount) || 0;
+  }, [
+    formData.category,
+    formData.customAmount,
+    formData.labourWorkersCount,
+    formData.labourDailyWage,
+    formData.labourDays,
+    formData.rentalDuration,
+    formData.rentalRate,
+    materialItems,
+  ]);
 
-  const vehicleRental = parseFloat(formData.rentalAmount) || 0;
-  const tips = parseFloat(formData.tipsAmount) || 0;
-  const totalExpenseAmount = materialCost + vehicleRental + tips;
+  const materialCost = formData.category === 'Materials' ? computedAmount : 0;
+  const vehicleRental = formData.category === 'Materials' ? (parseFloat(formData.rentalAmount) || 0) : 0;
+  const tips = formData.category === 'Materials' ? (parseFloat(formData.tipsAmount) || 0) : 0;
+  const totalExpenseAmount = computedAmount + vehicleRental + tips;
 
   useEffect(() => {
     setTotalAmount(totalExpenseAmount);
@@ -286,31 +404,63 @@ export default function AddExpenseModal({
     }
   };
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.description) return;
 
-    const siteParts = formData.site.split(' (');
-    const siteName = siteParts[0] || 'Green Villa';
-    const siteCode = siteParts[1] ? siteParts[1].replace(')', '') : 'KS-001';
+    let siteId = formData.siteId;
+    let siteName = 'Site';
+    let siteCode = '';
+
+    const matched = sitesList.find(
+      (s) => `${s.name} (${s.code})` === formData.site || s._id === formData.site || s.name === formData.site
+    );
+    if (matched) {
+      siteId = matched._id;
+      siteName = matched.name;
+      siteCode = matched.code;
+    } else if (formData.site) {
+      const siteParts = formData.site.split(' (');
+      siteName = siteParts[0] || 'Site';
+      siteCode = siteParts[1] ? siteParts[1].replace(')', '') : '';
+    }
 
     const formattedAmount = `₹${totalExpenseAmount.toLocaleString('en-IN')}`;
 
     const newExpense = {
       id: Date.now().toString(),
-      date: '01 Nov 2026',
+      siteId: siteId,
       siteName: siteName,
       siteCode: siteCode,
+      date: formData.date,
       category: formData.category,
-      materialName: formData.materialName,
+      materialName: formData.category === 'Materials' ? formData.materialName : null,
       description: formData.description,
       supplier: formData.supplier || '-',
+      supplierName: formData.supplier || '-',
       invoiceNo: formData.invoiceNo || '-',
-      amount: formattedAmount,
+      quantity:
+        formData.category === 'Labour'
+          ? parseFloat(formData.labourWorkersCount) || 1
+          : formData.category === 'Rental'
+          ? parseFloat(formData.rentalDuration) || 1
+          : parseFloat(formData.quantity) || 1,
+      unit:
+        formData.category === 'Labour'
+          ? 'Workers'
+          : formData.category === 'Rental'
+          ? formData.rentalUnit || 'Days'
+          : formData.unit || 'Bags',
+      rate:
+        formData.category === 'Labour'
+          ? parseFloat(formData.labourDailyWage) || 0
+          : formData.category === 'Rental'
+          ? parseFloat(formData.rentalRate) || 0
+          : parseFloat(formData.rate) || 0,
+      amount: totalExpenseAmount,
+      formattedAmount,
       materialCost,
-      vehicleType: formData.vehicleType,
+      vehicleType: formData.category === 'Materials' ? formData.vehicleType : null,
       rentalAmount: vehicleRental,
       tipsAmount: tips,
       totalExpenseAmount,
@@ -328,9 +478,23 @@ export default function AddExpenseModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
-        {/* Header */}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+        >
+          <motion.div
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden"
+          >
+            {/* Header */}
         <div className="flex items-center justify-between px-7 pt-6 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100/80 text-emerald-600 flex items-center justify-center shadow-xs shrink-0">
@@ -370,7 +534,7 @@ export default function AddExpenseModal({
                   <Layers size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                   <select
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                     className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
                   >
                     <option value="Materials">Materials</option>
@@ -404,13 +568,26 @@ export default function AddExpenseModal({
                     />
                     <select
                       value={formData.site}
-                      onChange={(e) => setFormData({ ...formData, site: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const match = sitesList.find((s) => s._id === val || `${s.name} (${s.code})` === val);
+                        setFormData({
+                          ...formData,
+                          site: match ? `${match.name} (${match.code})` : val,
+                          siteId: match ? match._id : '',
+                        });
+                      }}
                       className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
                     >
-                      <option value="Green Villa (KS-001)">Green Villa (KS-001)</option>
-                      <option value="Office Renovation (KS-002)">Office Renovation (KS-002)</option>
-                      <option value="RK Residence (KS-004)">RK Residence (KS-004)</option>
-                      <option value="Metro Apartment (KS-005)">Metro Apartment (KS-005)</option>
+                      {sitesList.length === 0 ? (
+                        <option value="">No sites available (Create a site first)</option>
+                      ) : (
+                        sitesList.map((s) => (
+                          <option key={s._id || s.id} value={`${s.name} (${s.code})`}>
+                            {s.name} ({s.code})
+                          </option>
+                        ))
+                      )}
                     </select>
                     <ChevronDown
                       size={14}
@@ -1038,215 +1215,450 @@ export default function AddExpenseModal({
             </div>
           )}
 
-          {/* Section 2: Purchase Details */}
-          <div className="space-y-3 pt-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
-              <ShoppingCart size={13} />
-              <span>Purchase Details</span>
-            </div>
+          {/* =========================================================================
+              SECTION 2: DYNAMIC DETAILS BY CATEGORY
+              ========================================================================= */}
 
-            {formData.category === 'Materials' ? (
-              /* For Materials: Material Breakdown table already contains Material, Quantity, Unit & Amounts, so only Supplier & Invoice details are needed */
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* Supplier / Vendor */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Supplier / Vendor
-                  </label>
-                  <div className="relative">
-                    <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type="text"
-                      placeholder="e.g. SM Traders"
-                      value={formData.supplier}
-                      onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
-                    />
-                  </div>
+          {/* 1. MATERIALS: Purchase & Supplier Details + Transportation */}
+          {formData.category === 'Materials' && (
+            <>
+              {/* Purchase Details */}
+              <div className="space-y-3 pt-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
+                  <ShoppingCart size={13} />
+                  <span>Purchase & Supplier Details</span>
                 </div>
 
-                {/* Invoice / Bill No. */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Invoice / Bill No. <span className="text-slate-400 font-normal">(Optional)</span>
-                  </label>
-                  <div className="relative">
-                    <FileSpreadsheet size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type="text"
-                      placeholder="e.g. INV-1042 / Cash Memo"
-                      value={formData.invoiceNo || ''}
-                      onChange={(e) => setFormData({ ...formData, invoiceNo: e.target.value })}
-                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
-                    />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Supplier / Vendor
+                    </label>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Sri Cement Traders"
+                        value={formData.supplier}
+                        onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Invoice / Bill No. <span className="text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <div className="relative">
+                      <FileSpreadsheet size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. INV-1042 / Cash Memo"
+                        value={formData.invoiceNo || ''}
+                        onChange={(e) => setFormData({ ...formData, invoiceNo: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            ) : (
-              /* For Non-Materials (Labour, Rental, Other): show Quantity, Unit, Rate per unit */
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
-                {/* Supplier / Vendor */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Supplier / Vendor
-                  </label>
-                  <div className="relative">
-                    <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type="text"
-                      placeholder="SM Traders"
-                      value={formData.supplier}
-                      onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
-                    />
+
+              {/* Additional Transportation Expenses for Materials */}
+              <div className="space-y-3 pt-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
+                  <Truck size={13} />
+                  <span>Transportation & Vehicle Rental (Optional)</span>
+                </div>
+
+                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                        Vehicle Type
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={formData.vehicleType}
+                          onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
+                          className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 cursor-pointer shadow-2xs"
+                        >
+                          <option value="Tata Ace / Mini Truck">Tata Ace / Mini Truck</option>
+                          <option value="Pickup / Bolero Truck">Pickup / Bolero Truck</option>
+                          <option value="Tipper / Dumper">Tipper / Dumper</option>
+                          <option value="Tractor">Tractor</option>
+                          <option value="6-Wheeler Lorry">6-Wheeler Lorry</option>
+                          <option value="10-Wheeler Lorry">10-Wheeler Lorry</option>
+                          <option value="Auto / 3-Wheeler">Auto / 3-Wheeler</option>
+                          <option value="Other Vehicle">Other Vehicle</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                        Rental Amount (₹)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="0.00"
+                          value={formData.rentalAmount}
+                          onChange={(e) => setFormData({ ...formData, rentalAmount: e.target.value })}
+                          className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-200">
+                    <div className="max-w-sm">
+                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                        Driver Tips (₹) <span className="text-slate-400 font-normal">(Optional)</span>
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="0.00"
+                          value={formData.tipsAmount}
+                          onChange={(e) => setFormData({ ...formData, tipsAmount: e.target.value })}
+                          className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* 2. LABOUR: Dedicated Labour Deployment & Wages Section */}
+          {formData.category === 'Labour' && (
+            <div className="space-y-3 pt-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-300 text-blue-800 text-xs font-extrabold">
+                <User size={13} />
+                <span>Labour Deployment & Daily Wages</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Labour Role */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Labour / Worker Role <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={formData.labourType || 'Mason'}
+                        onChange={(e) => {
+                          const role = e.target.value;
+                          const count = formData.labourWorkersCount || '4';
+                          setFormData({
+                            ...formData,
+                            labourType: role,
+                            description: `${role} Daily Wages (${count} Workers)`,
+                          });
+                        }}
+                        className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
+                      >
+                        {LABOUR_WORKER_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Contractor / Team Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Contractor / Team <span className="text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Direct Labour / Contractor Name"
+                        value={formData.supplier}
+                        onChange={(e) => setFormData({ ...formData, supplier: e.target.value, labourContractor: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Quantity */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Quantity <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="1"
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
-                  />
-                </div>
-
-                {/* Unit */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Unit <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={formData.unit}
-                      onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                      className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 pr-8 shadow-2xs cursor-pointer"
-                    >
-                      <option value="Days">Days</option>
-                      <option value="Hours">Hours</option>
-                      <option value="Loads">Loads</option>
-                      <option value="Pieces">Pieces</option>
-                      <option value="Bags">Bags</option>
-                      <option value="Tons">Tons</option>
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                  </div>
-                </div>
-
-                {/* Rate per Unit */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Rate per Unit (₹) <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  {/* Number of Workers */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      No. of Workers <span className="text-rose-500">*</span>
+                    </label>
                     <input
                       type="number"
-                      placeholder="420"
-                      value={formData.rate}
-                      onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
-                      className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                      min="1"
+                      placeholder="4"
+                      value={formData.labourWorkersCount}
+                      onChange={(e) => {
+                        const count = e.target.value;
+                        const role = formData.labourType || 'Mason';
+                        setFormData({
+                          ...formData,
+                          labourWorkersCount: count,
+                          quantity: count,
+                          description: `${role} Daily Wages (${count} Workers)`,
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
                     />
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
 
-          {/* Section: Additional Expenses */}
-          <div className="space-y-3 pt-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
-              <Truck size={13} />
-              <span>Additional Expenses</span>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
-              {/* Transportation / Vehicle Rental Header */}
-              <div>
-                <div className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Truck size={15} className="text-emerald-600" />
-                  <span>Transportation / Vehicle Rental</span>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  Vehicle used to carry and transport the materials to site
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* Vehicle Type */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Vehicle Type
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={formData.vehicleType}
-                      onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
-                      className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 cursor-pointer shadow-2xs"
-                    >
-                      <option value="Tata Ace / Mini Truck">Tata Ace / Mini Truck</option>
-                      <option value="Pickup / Bolero Truck">Pickup / Bolero Truck</option>
-                      <option value="Tipper / Dumper">Tipper / Dumper</option>
-                      <option value="Tractor">Tractor</option>
-                      <option value="6-Wheeler Lorry">6-Wheeler Lorry</option>
-                      <option value="10-Wheeler Lorry">10-Wheeler Lorry</option>
-                      <option value="Auto / 3-Wheeler">Auto / 3-Wheeler</option>
-                      <option value="Other Vehicle">Other Vehicle</option>
-                    </select>
-                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  {/* Daily Wage Rate */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Daily Wage / Worker (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="1000"
+                        value={formData.labourDailyWage}
+                        onChange={(e) => setFormData({ ...formData, labourDailyWage: e.target.value, rate: e.target.value })}
+                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Rental Amount (₹) */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Rental Amount (₹)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                  {/* Days / Shifts */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Shifts / Days <span className="text-rose-500">*</span>
+                    </label>
                     <input
                       type="number"
                       step="any"
-                      placeholder="0.00"
-                      value={formData.rentalAmount}
-                      onChange={(e) => setFormData({ ...formData, rentalAmount: e.target.value })}
-                      className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                      min="0.5"
+                      placeholder="1"
+                      value={formData.labourDays}
+                      onChange={(e) => setFormData({ ...formData, labourDays: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Tips Section */}
-              <div className="pt-3 border-t border-slate-200">
-                <div className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5 mb-2.5">
-                  <Coins size={15} className="text-amber-500" />
-                  <span>Tips</span>
-                </div>
-
-                <div className="max-w-sm">
-                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                    Tips Amount (₹) <span className="text-slate-500 font-normal">(Optional)</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="0.00"
-                      value={formData.tipsAmount}
-                      onChange={(e) => setFormData({ ...formData, tipsAmount: e.target.value })}
-                      className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
-                    />
+                {/* Direct Override or Custom Total */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-600">
+                      Calculated Wages: <strong className="text-slate-900">₹ {((parseFloat(formData.labourWorkersCount) || 1) * (parseFloat(formData.labourDailyWage) || 0) * (parseFloat(formData.labourDays) || 1)).toLocaleString('en-IN')}</strong>
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      (Workers × Wage × Days)
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* 3. RENTAL: Machinery & Equipment Rental Section */}
+          {formData.category === 'Rental' && (
+            <div className="space-y-3 pt-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-300 text-amber-800 text-xs font-extrabold">
+                <Truck size={13} />
+                <span>Machinery & Equipment Rental</span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Machinery Type */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Equipment / Vehicle <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={formData.rentalEquipment || 'JCB / Excavator'}
+                        onChange={(e) => {
+                          const eq = e.target.value;
+                          const dur = formData.rentalDuration || '1';
+                          const u = formData.rentalUnit || 'Days';
+                          setFormData({
+                            ...formData,
+                            rentalEquipment: eq,
+                            description: `${eq} Rental (${dur} ${u})`,
+                          });
+                        }}
+                        className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs cursor-pointer"
+                      >
+                        <option value="JCB / Excavator">JCB / Excavator</option>
+                        <option value="Concrete Mixer Machine">Concrete Mixer Machine</option>
+                        <option value="Generator (DG Set)">Generator (DG Set)</option>
+                        <option value="Tractor">Tractor</option>
+                        <option value="Crane">Crane</option>
+                        <option value="Scaffolding">Scaffolding</option>
+                        <option value="Tipper / Dumper">Tipper / Dumper</option>
+                        <option value="Earth Compactor / Roller">Earth Compactor / Roller</option>
+                        <option value="Concrete Vibrator / Needle">Concrete Vibrator / Needle</option>
+                        <option value="Other Machinery">Other Machinery</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Vendor / Owner Name */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Vendor / Owner Name
+                    </label>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Kovai Earthmovers"
+                        value={formData.supplier}
+                        onChange={(e) => setFormData({ ...formData, supplier: e.target.value, rentalVendor: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  {/* Duration */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Usage / Duration <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="1"
+                      value={formData.rentalDuration}
+                      onChange={(e) => {
+                        const dur = e.target.value;
+                        const eq = formData.rentalEquipment || 'JCB / Excavator';
+                        const u = formData.rentalUnit || 'Days';
+                        setFormData({
+                          ...formData,
+                          rentalDuration: dur,
+                          quantity: dur,
+                          description: `${eq} Rental (${dur} ${u})`,
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs"
+                    />
+                  </div>
+
+                  {/* Unit */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Unit <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={formData.rentalUnit}
+                        onChange={(e) => {
+                          const u = e.target.value;
+                          const eq = formData.rentalEquipment || 'JCB / Excavator';
+                          const dur = formData.rentalDuration || '1';
+                          setFormData({
+                            ...formData,
+                            rentalUnit: u,
+                            unit: u,
+                            description: `${eq} Rental (${dur} ${u})`,
+                          });
+                        }}
+                        className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 pr-8 shadow-2xs cursor-pointer"
+                      >
+                        <option value="Hours">Hours</option>
+                        <option value="Days">Days</option>
+                        <option value="Shifts">Shifts</option>
+                        <option value="Trips">Trips</option>
+                        <option value="Months">Months</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Rate per Unit */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Rate per {formData.rentalUnit || 'Day'} (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="3000"
+                        value={formData.rentalRate}
+                        onChange={(e) => setFormData({ ...formData, rentalRate: e.target.value, rate: e.target.value })}
+                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4. ADDITIONAL WORK OR OTHER: Clean Work & Expense Details */}
+          {(formData.category === 'Additional Work' || formData.category === 'Other') && (
+            <div className="space-y-3 pt-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-300 text-purple-800 text-xs font-extrabold">
+                <FileEdit size={13} />
+                <span>
+                  {formData.category === 'Additional Work' ? 'Additional Site Work Details' : 'Miscellaneous Expense Details'}
+                </span>
+              </div>
+
+              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      {formData.category === 'Additional Work' ? 'Contractor / In-Charge' : 'Paid To / Vendor'}
+                    </label>
+                    <div className="relative">
+                      <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Service Provider / Contractor"
+                        value={formData.supplier}
+                        onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Total Expense Amount (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="0.00"
+                        value={formData.customAmount}
+                        onChange={(e) => setFormData({ ...formData, customAmount: e.target.value })}
+                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Section: Expense Calculation */}
           <div className="space-y-3 pt-2">
@@ -1260,35 +1672,92 @@ export default function AddExpenseModal({
                 Expense Summary
               </div>
 
-              {/* Summary Items */}
+              {/* Dynamic Summary Items based on Category */}
               <div className="space-y-2.5 text-xs">
-                <div className="flex items-center justify-between text-slate-700">
-                  <span className="font-bold">Material Cost</span>
-                  <span className="font-extrabold text-slate-900">
-                    ₹ {materialCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                {formData.category === 'Materials' && (
+                  <>
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Material Cost</span>
+                      <span className="font-extrabold text-slate-900">
+                        ₹ {materialCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
 
-                <div className="flex items-center justify-between text-slate-700">
-                  <span className="font-bold">Vehicle Rental</span>
-                  <span className="font-extrabold text-slate-900">
-                    ₹ {vehicleRental.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Vehicle Rental</span>
+                      <span className="font-extrabold text-slate-900">
+                        ₹ {vehicleRental.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
 
-                <div className="flex items-center justify-between text-slate-700">
-                  <span className="font-bold">Tips</span>
-                  <span className="font-extrabold text-slate-900">
-                    ₹ {tips.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Tips</span>
+                      <span className="font-extrabold text-slate-900">
+                        ₹ {tips.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {formData.category === 'Labour' && (
+                  <>
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Labour Role & Headcount</span>
+                      <span className="font-extrabold text-slate-900">
+                        {formData.labourType || 'Mason'} ({formData.labourWorkersCount || 1} Workers × {formData.labourDays || 1} Days)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Daily Wage Rate</span>
+                      <span className="font-extrabold text-slate-900">
+                        ₹ {parseFloat(formData.labourDailyWage || 0).toLocaleString('en-IN')} / worker
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {formData.category === 'Rental' && (
+                  <>
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Machinery / Equipment</span>
+                      <span className="font-extrabold text-slate-900">
+                        {formData.rentalEquipment || 'Equipment'} ({formData.rentalDuration || 1} {formData.rentalUnit || 'Days'})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-slate-700">
+                      <span className="font-bold">Rental Rate</span>
+                      <span className="font-extrabold text-slate-900">
+                        ₹ {parseFloat(formData.rentalRate || 0).toLocaleString('en-IN')} per {formData.rentalUnit || 'Day'}
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {(formData.category === 'Additional Work' || formData.category === 'Other') && (
+                  <div className="flex items-center justify-between text-slate-700">
+                    <span className="font-bold">Category</span>
+                    <span className="font-extrabold text-slate-900">
+                      {formData.category}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Total Expense Amount Prominent Highlight */}
               <div className="pt-3 border-t border-slate-200 flex items-center justify-between px-4 py-3.5 rounded-xl bg-emerald-50 border-2 border-emerald-300">
                 <div>
                   <div className="text-xs font-black text-emerald-950">Total Expense Amount</div>
-                  <div className="text-[11px] text-emerald-800 font-semibold">Material Cost + Vehicle Rental + Tips</div>
+                  <div className="text-[11px] text-emerald-800 font-semibold">
+                    {formData.category === 'Materials'
+                      ? 'Material Cost + Vehicle Rental + Tips'
+                      : formData.category === 'Labour'
+                      ? 'Daily Wages × Workers × Days'
+                      : formData.category === 'Rental'
+                      ? 'Equipment Rate × Duration'
+                      : 'Recorded Expense Amount'}
+                  </div>
                 </div>
                 <span className="text-xl font-black text-emerald-950 tracking-tight">
                   ₹ {totalExpenseAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1503,7 +1972,9 @@ export default function AddExpenseModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

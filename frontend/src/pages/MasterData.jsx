@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Layers,
   Users,
@@ -23,11 +23,16 @@ import {
   ToggleLeft,
   ToggleRight,
   Tag,
+  Trash2,
+  Briefcase,
+  IndianRupee,
+  ShieldCheck,
 } from 'lucide-react';
 import AddClientModal from '../components/AddClientModal';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import AddMaterialModal from '../components/AddMaterialModal';
 import { INITIAL_MATERIALS } from '../constants/materialsData';
+import { materialApi, clientApi, employeeApi } from '../services/api';
 
 export default function MasterData({
   materials: externalMaterials,
@@ -49,16 +54,113 @@ export default function MasterData({
   const [editingPriceId, setEditingPriceId] = useState(null);
   const [editPriceVal, setEditPriceVal] = useState('');
 
+  // Live Clients & Employees Data from MongoDB Atlas
+  const [clients, setClients] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loadingClients, setLoadingClients] = useState(true);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
+
+  // Load from MongoDB Atlas on mount
+  useEffect(() => {
+    loadMaterials();
+    loadClients();
+    loadEmployees();
+  }, []);
+
+  const loadMaterials = async () => {
+    try {
+      const res = await materialApi.getAll();
+      const list = res.data || res || [];
+      if (Array.isArray(list) && list.length > 0) {
+        const formatted = list.map((m) => ({
+          id: m._id || m.id,
+          code: m.code,
+          name: m.name,
+          category: m.category,
+          unit: m.unit,
+          price: m.defaultPrice || 0,
+          status: m.status || 'Active',
+          stock: m.currentStock || m.stock || 0,
+          img: m.imageUrl || '',
+        }));
+        setMaterialsList(formatted);
+      }
+    } catch (err) {
+      console.warn('Could not load materials:', err.message);
+    }
+  };
+
+  const loadClients = async () => {
+    try {
+      setLoadingClients(true);
+      const res = await clientApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((c) => ({
+        id: c._id || c.id,
+        initials: c.initials || (c.name ? c.name.slice(0, 2).toUpperCase() : 'CL'),
+        name: c.name,
+        type: c.type || 'Individual',
+        phone: c.phone || '-',
+        email: c.email || '-',
+        location: c.city ? `${c.city}${c.state ? `, ${c.state}` : ''}` : (c.address1 || 'Tamil Nadu'),
+        projects: `${c.projectsCount || 0} Project${c.projectsCount === 1 ? '' : 's'}`,
+        status: c.status || 'Active',
+        avatarBg: c.type === 'Company' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800',
+      }));
+      setClients(formatted);
+    } catch (err) {
+      console.warn('Could not fetch clients from backend:', err.message);
+      setClients([]);
+    } finally {
+      setLoadingClients(false);
+    }
+  };
+
+  const loadEmployees = async () => {
+    try {
+      setLoadingEmployees(true);
+      const res = await employeeApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((e) => ({
+        id: e._id || e.id,
+        empId: e.empId,
+        initials: e.initials || (e.name ? e.name.slice(0, 2).toUpperCase() : 'EM'),
+        name: e.name,
+        phone: e.phone || '-',
+        email: e.email || '-',
+        designation: e.designation || 'Site Engineer',
+        department: e.department || 'Civil',
+        joiningDate: e.joiningDate ? new Date(e.joiningDate).toLocaleDateString('en-IN') : '-',
+        salary: e.salary || 0,
+        assignedSite: e.assignedSite || 'All Sites',
+        employmentType: e.employmentType || 'Permanent',
+        status: e.status || 'Active',
+        avatarBg: 'bg-blue-100 text-blue-800',
+      }));
+      setEmployees(formatted);
+    } catch (err) {
+      console.warn('Could not fetch employees from backend:', err.message);
+      setEmployees([]);
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
   // Start inline price editing
   const handleStartEditPrice = (mat) => {
     setEditingPriceId(mat.id);
     setEditPriceVal(String(mat.price));
   };
 
-  // Save updated master price (Updates live master catalogue and future godown operations)
-  const handleSavePrice = (id) => {
+  // Save updated master price
+  const handleSavePrice = async (id) => {
     const numeric = parseFloat(editPriceVal);
     if (!isNaN(numeric) && numeric >= 0) {
+      try {
+        await materialApi.update(id, { defaultPrice: numeric });
+      } catch (err) {
+        console.warn('Could not update price in DB:', err.message);
+      }
       setMaterialsList((prev) =>
         prev.map((m) => (m.id === id ? { ...m, price: numeric } : m))
       );
@@ -66,18 +168,56 @@ export default function MasterData({
     setEditingPriceId(null);
   };
 
-  // Toggle Active / Inactive status
-  const handleToggleStatus = (id) => {
+  // Toggle Active / Inactive status for Material
+  const handleToggleStatus = async (id) => {
+    const item = materialsList.find((m) => m.id === id);
+    if (!item) return;
+    const newStatus = item.status === 'Active' ? 'Inactive' : 'Active';
+    try {
+      await materialApi.update(id, { status: newStatus });
+    } catch (err) {
+      console.warn('Could not update status in DB:', err.message);
+    }
     setMaterialsList((prev) =>
       prev.map((m) =>
         m.id === id
-          ? { ...m, status: m.status === 'Active' ? 'Inactive' : 'Active' }
+          ? { ...m, status: newStatus }
           : m
       )
     );
   };
 
-  const handleSaveMaterial = (newMat) => {
+  const handleSaveMaterial = async (newMat) => {
+    try {
+      const payload = {
+        name: newMat.name,
+        category: newMat.category || 'General',
+        unit: newMat.unit || 'Bags',
+        defaultPrice: parseFloat(newMat.price) || 0,
+        status: 'Active',
+        description: newMat.description || '',
+      };
+      const res = await materialApi.create(payload);
+      if (res && res.data) {
+        const m = res.data;
+        const formatted = {
+          id: m._id || m.id,
+          code: m.code,
+          name: m.name,
+          category: m.category,
+          unit: m.unit,
+          price: m.defaultPrice || 0,
+          status: m.status || 'Active',
+          stock: 0,
+          img: m.imageUrl || '',
+        };
+        setMaterialsList((prev) => [formatted, ...prev]);
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to save material to DB, falling back to local state:', err.message);
+    }
+
     const created = {
       id: `MAT-${Date.now().toString().slice(-4)}`,
       name: newMat.name,
@@ -97,82 +237,102 @@ export default function MasterData({
     setMaterialsList((prev) => [created, ...prev]);
   };
 
-  // Clients Data
-  const [clients, setClients] = useState([
-    {
-      id: 1,
-      initials: 'AK',
-      name: 'Arun Kumar',
-      type: 'Individual',
-      phone: '+91 98765 43210',
-      email: 'arun@gmail.com',
-      location: 'Chennai, TN',
-      projects: '2 Projects',
+  // Save new client to MongoDB Atlas
+  const handleSaveClient = async (newClientData) => {
+    try {
+      const res = await clientApi.create(newClientData);
+      if (res && res.data) {
+        await loadClients();
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to save client to DB:', err.message);
+    }
+    // Optimistic fallback
+    const initials = newClientData.name
+      ? newClientData.name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
+      : 'CL';
+    const fallback = {
+      id: Date.now().toString(),
+      initials,
+      name: newClientData.name,
+      type: newClientData.type || 'Individual',
+      phone: newClientData.phone || '-',
+      email: newClientData.email || '-',
+      location: newClientData.city ? `${newClientData.city}, TN` : 'Tamil Nadu',
+      projects: '0 Projects',
       status: 'Active',
-      avatarBg: 'bg-emerald-100 text-emerald-800',
-    },
-    {
-      id: 2,
-      initials: 'RS',
-      name: 'Ravi & Sons Constructions',
-      type: 'Company',
-      phone: '+91 98401 22334',
-      email: 'info@ravisons.com',
-      location: 'Madurai, TN',
-      projects: '1 Project',
-      status: 'Active',
-      avatarBg: 'bg-amber-100 text-amber-800',
-    },
-    {
-      id: 3,
-      initials: 'MS',
-      name: 'Maya Construction',
-      type: 'Company',
-      phone: '+91 97509 88776',
-      email: 'maya@construction.com',
-      location: 'Tirunelveli, TN',
-      projects: '2 Projects',
-      status: 'Active',
-      avatarBg: 'bg-sky-100 text-sky-800',
-    },
-    {
-      id: 4,
-      initials: 'SK',
-      name: 'Sathish Kumar',
-      type: 'Individual',
-      phone: '+91 98840 55667',
-      email: 'sathishk@gmail.com',
-      location: 'Thoothukudi, TN',
-      projects: '1 Project',
-      status: 'On Hold',
-      avatarBg: 'bg-purple-100 text-purple-800',
-    },
-    {
-      id: 5,
-      initials: 'VG',
-      name: 'Vignesh Group',
-      type: 'Company',
-      phone: '+91 98422 111009',
-      email: 'contact@vigneshgroup.in',
-      location: 'Coimbatore, TN',
-      projects: '2 Projects',
-      status: 'Active',
-      avatarBg: 'bg-rose-100 text-rose-800',
-    },
-  ]);
-
-  const handleSaveClient = (newClient) => {
-    const formatted = {
-      ...newClient,
       avatarBg: 'bg-emerald-100 text-emerald-800',
     };
-    setClients([formatted, ...clients]);
+    setClients((prev) => [fallback, ...prev]);
   };
 
+  const handleDeleteClient = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this client?')) return;
+    try {
+      await clientApi.delete(id);
+      setClients((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      console.warn('Could not delete client:', err.message);
+    }
+  };
+
+  // Save new employee to MongoDB Atlas
+  const handleSaveEmployee = async (newEmpData) => {
+    try {
+      const res = await employeeApi.create(newEmpData);
+      if (res && res.data) {
+        await loadEmployees();
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to save employee to DB:', err.message);
+    }
+    // Optimistic fallback
+    const initials = newEmpData.name
+      ? newEmpData.name.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
+      : 'EM';
+    const fallback = {
+      id: Date.now().toString(),
+      empId: newEmpData.empId || `EMP-${Date.now().toString().slice(-3)}`,
+      initials,
+      name: newEmpData.name,
+      phone: newEmpData.phone || '-',
+      email: newEmpData.email || '-',
+      designation: newEmpData.designation || 'Site Engineer',
+      department: newEmpData.department || 'Civil',
+      joiningDate: new Date().toLocaleDateString('en-IN'),
+      salary: parseFloat(newEmpData.salary) || 0,
+      assignedSite: newEmpData.assignedSite || 'All Sites',
+      employmentType: newEmpData.employmentType || 'Permanent',
+      status: 'Active',
+      avatarBg: 'bg-blue-100 text-blue-800',
+    };
+    setEmployees((prev) => [fallback, ...prev]);
+  };
+
+  const handleDeleteEmployee = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this employee?')) return;
+    try {
+      await employeeApi.delete(id);
+      setEmployees((prev) => prev.filter((e) => e.id !== id));
+    } catch (err) {
+      console.warn('Could not delete employee:', err.message);
+    }
+  };
+
+  // Filtered queries
   const filteredClients = clients.filter((c) =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.phone.includes(searchQuery) ||
     c.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredEmployees = employees.filter((e) =>
+    e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.empId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.designation.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    e.phone.includes(searchQuery)
   );
 
   return (
@@ -214,7 +374,7 @@ export default function MasterData({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Clients Tab */}
         <button
-          onClick={() => setActiveTab('Clients')}
+          onClick={() => { setActiveTab('Clients'); setSearchQuery(''); }}
           className={`flex items-center gap-4 p-5 rounded-2xl text-left transition-all duration-300 cursor-pointer ${
             activeTab === 'Clients'
               ? 'bg-[#008744] text-white shadow-lg shadow-emerald-800/25 ring-2 ring-emerald-500/20'
@@ -229,7 +389,7 @@ export default function MasterData({
             <Users size={24} />
           </div>
           <div>
-            <div className="text-base font-bold">Clients</div>
+            <div className="text-base font-bold">Clients ({clients.length})</div>
             <div
               className={`text-xs mt-0.5 ${
                 activeTab === 'Clients' ? 'text-emerald-100' : 'text-slate-400'
@@ -242,7 +402,7 @@ export default function MasterData({
 
         {/* Employees Tab */}
         <button
-          onClick={() => setActiveTab('Employees')}
+          onClick={() => { setActiveTab('Employees'); setSearchQuery(''); }}
           className={`flex items-center gap-4 p-5 rounded-2xl text-left transition-all duration-300 cursor-pointer ${
             activeTab === 'Employees'
               ? 'bg-[#008744] text-white shadow-lg shadow-emerald-800/25 ring-2 ring-emerald-500/20'
@@ -257,7 +417,7 @@ export default function MasterData({
             <HardHat size={24} />
           </div>
           <div>
-            <div className="text-base font-bold">Employees</div>
+            <div className="text-base font-bold">Employees ({employees.length})</div>
             <div
               className={`text-xs mt-0.5 ${
                 activeTab === 'Employees' ? 'text-emerald-100' : 'text-slate-400'
@@ -270,7 +430,7 @@ export default function MasterData({
 
         {/* Materials Tab */}
         <button
-          onClick={() => setActiveTab('Materials')}
+          onClick={() => { setActiveTab('Materials'); setSearchQuery(''); }}
           className={`flex items-center gap-4 p-5 rounded-2xl text-left transition-all duration-300 cursor-pointer ${
             activeTab === 'Materials'
               ? 'bg-[#008744] text-white shadow-lg shadow-emerald-800/25 ring-2 ring-emerald-500/20'
@@ -285,7 +445,7 @@ export default function MasterData({
             <Package size={24} />
           </div>
           <div>
-            <div className="text-base font-bold">Materials</div>
+            <div className="text-base font-bold">Materials ({materialsList.length})</div>
             <div
               className={`text-xs mt-0.5 ${
                 activeTab === 'Materials' ? 'text-emerald-100' : 'text-slate-400'
@@ -298,6 +458,9 @@ export default function MasterData({
       </div>
 
       {/* 3. Main View for Active Tab */}
+      {/* ==================================== */}
+      {/* TAB 1: CLIENTS                       */}
+      {/* ==================================== */}
       {activeTab === 'Clients' && (
         <div className="space-y-5">
           {/* Action Header */}
@@ -318,10 +481,6 @@ export default function MasterData({
                 />
               </div>
 
-              <button className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 shadow-2xs">
-                <Filter size={15} />
-              </button>
-
               <button
                 onClick={() => setIsClientModalOpen(true)}
                 className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/25 transition-all cursor-pointer whitespace-nowrap"
@@ -333,170 +492,311 @@ export default function MasterData({
           </div>
 
           {/* Grid Layout: Left Stats Column & Right Clients List */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Stats Cards (3 cols) */}
-            <div className="lg:col-span-3 space-y-3.5">
-              {/* Total Clients */}
-              <div className="bg-[#edf9f3] rounded-2xl p-4 border border-emerald-100/80 shadow-2xs flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-                  <Users size={20} />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Left Stats Column (3 cols) */}
+            <div className="lg:col-span-3 space-y-4">
+              {/* Total Clients Card */}
+              <div className="bg-[#008744] text-white rounded-3xl p-6 shadow-md shadow-emerald-800/20 relative overflow-hidden">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-emerald-100">Total Clients</span>
+                  <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                    <Users size={16} />
+                  </div>
                 </div>
-                <div>
-                  <div className="text-2xl font-black text-slate-900 leading-none">12</div>
-                  <div className="text-xs text-slate-500 font-medium mt-1">Total Clients</div>
-                </div>
+                <div className="text-4xl font-black mt-3">{clients.length}</div>
+                <div className="text-[11px] text-emerald-100 mt-1">Saved in database</div>
               </div>
 
-              {/* Active Projects */}
-              <div className="bg-[#edf5ff] rounded-2xl p-4 border border-blue-100/80 shadow-2xs flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
-                  <Building2 size={20} />
-                </div>
-                <div>
-                  <div className="text-2xl font-black text-slate-900 leading-none">8</div>
-                  <div className="text-xs text-slate-500 font-medium mt-1">Active Projects</div>
-                </div>
-              </div>
-
-              {/* Completed Projects */}
-              <div className="bg-[#fff7ee] rounded-2xl p-4 border border-amber-100/80 shadow-2xs flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+              {/* Active Clients */}
+              <div className="bg-[#f0fdf4] rounded-2xl p-4 border border-emerald-100/80 shadow-2xs flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-700 flex items-center justify-center shrink-0">
                   <CheckCircle2 size={20} />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-slate-900 leading-none">2</div>
-                  <div className="text-xs text-slate-500 font-medium mt-1">Completed Projects</div>
+                  <div className="text-2xl font-black text-slate-900 leading-none">
+                    {clients.filter((c) => c.status === 'Active').length}
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium mt-1">Active Profiles</div>
                 </div>
               </div>
 
-              {/* On Hold */}
-              <div className="bg-[#fef2f2] rounded-2xl p-4 border border-rose-100/80 shadow-2xs flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
-                  <Clock size={20} />
+              {/* Company vs Individual */}
+              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-2xs flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Building2 size={20} />
                 </div>
                 <div>
-                  <div className="text-2xl font-black text-slate-900 leading-none">2</div>
-                  <div className="text-xs text-slate-500 font-medium mt-1">On Hold</div>
+                  <div className="text-2xl font-black text-slate-900 leading-none">
+                    {clients.filter((c) => c.type === 'Company').length}
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium mt-1">Corporate Entities</div>
                 </div>
               </div>
             </div>
 
             {/* Right Clients List Table (9 cols) */}
             <div className="lg:col-span-9 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-              <div className="divide-y divide-slate-100">
-                {filteredClients.map((client) => (
-                  <div
-                    key={client.id}
-                    className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
+              {loadingClients ? (
+                <div className="p-12 text-center text-slate-400">
+                  <Clock size={28} className="mx-auto mb-2 text-slate-300 animate-spin" />
+                  <div className="font-semibold text-slate-600">Loading clients from database...</div>
+                </div>
+              ) : filteredClients.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 space-y-3">
+                  <Users size={32} className="mx-auto text-slate-300" />
+                  <div className="font-bold text-slate-700 text-sm">No clients found</div>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    {searchQuery
+                      ? 'No clients match your search query.'
+                      : 'No clients registered yet. Click "Add Client" above to create your first client profile.'}
+                  </p>
+                  <button
+                    onClick={() => setIsClientModalOpen(true)}
+                    className="inline-flex items-center gap-2 bg-[#008744] text-white rounded-xl px-4 py-2 text-xs font-bold cursor-pointer hover:bg-[#00743a] transition-all"
                   >
-                    {/* Initials & Client Info */}
-                    <div className="flex items-center gap-3.5 min-w-[210px]">
-                      <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 shadow-2xs ${client.avatarBg}`}
-                      >
-                        {client.initials}
-                      </div>
-                      <div>
-                        <div className="font-bold text-slate-900 text-xs">{client.name}</div>
-                        <span className="inline-block mt-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
-                          {client.type}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Contact details */}
-                    <div className="space-y-0.5 min-w-[150px] text-[11px] text-slate-600 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <Phone size={11} className="text-slate-400" />
-                        <span>{client.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-400">
-                        <Mail size={11} />
-                        <span>{client.email}</span>
-                      </div>
-                    </div>
-
-                    {/* Location */}
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 min-w-[120px]">
-                      <MapPin size={13} className="text-slate-400" />
-                      <span>{client.location}</span>
-                    </div>
-
-                    {/* Projects Count */}
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 min-w-[90px]">
-                      <Layers size={13} className="text-emerald-600" />
-                      <span>{client.projects}</span>
-                    </div>
-
-                    {/* Status */}
-                    <div className="min-w-[80px]">
-                      {client.status === 'Active' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span>Active</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          <span>On Hold</span>
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1.5 self-end md:self-center">
-                      <button className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50/50 transition-colors">
-                        <Edit2 size={13} />
-                      </button>
-                      <button className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors">
-                        <MoreHorizontal size={13} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 text-xs">
-                <span className="text-slate-500 font-medium">Showing 1 – 5 of 12 clients</span>
-                <div className="flex items-center gap-1.5">
-                  <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400">
-                    <ChevronLeft size={13} />
-                  </button>
-                  <button className="w-7 h-7 rounded-lg bg-[#008744] text-white font-bold text-xs">1</button>
-                  <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs">2</button>
-                  <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 font-semibold text-xs">3</button>
-                  <button className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400">
-                    <ChevronRight size={13} />
+                    <Plus size={14} />
+                    <span>Add First Client</span>
                   </button>
                 </div>
-              </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {filteredClients.map((client) => (
+                    <div
+                      key={client.id}
+                      className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors"
+                    >
+                      {/* Initials & Client Info */}
+                      <div className="flex items-center gap-3.5 min-w-[210px]">
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center font-extrabold text-xs shrink-0 shadow-2xs ${client.avatarBg}`}
+                        >
+                          {client.initials}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs">{client.name}</div>
+                          <span className="inline-block mt-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/50">
+                            {client.type}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Contact details */}
+                      <div className="space-y-0.5 min-w-[150px] text-[11px] text-slate-600 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <Phone size={11} className="text-slate-400" />
+                          <span>{client.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                          <Mail size={11} />
+                          <span>{client.email}</span>
+                        </div>
+                      </div>
+
+                      {/* Location */}
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 min-w-[120px]">
+                        <MapPin size={13} className="text-slate-400" />
+                        <span>{client.location}</span>
+                      </div>
+
+                      {/* Status */}
+                      <div className="min-w-[80px]">
+                        {client.status === 'Active' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            <span>Active</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            <span>On Hold</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1.5 self-end md:self-center">
+                        <button
+                          onClick={() => handleDeleteClient(client.id)}
+                          className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors cursor-pointer"
+                          title="Delete client"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Employees Tab Placeholder with Add Trigger */}
+      {/* ==================================== */}
+      {/* TAB 2: EMPLOYEES                     */}
+      {/* ==================================== */}
       {activeTab === 'Employees' && (
-        <div className="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <HardHat size={32} />
+        <div className="space-y-5">
+          {/* Action Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                Employees Master ({employees.length})
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Engineers, supervisors, project managers, and company staff records.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="relative w-72 md:w-80">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by name, ID, designation..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                />
+              </div>
+
+              <button
+                onClick={() => setIsEmployeeModalOpen(true)}
+                className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/25 transition-all cursor-pointer whitespace-nowrap"
+              >
+                <Plus size={16} />
+                <span>Add Employee</span>
+              </button>
+            </div>
           </div>
-          <h3 className="text-xl font-bold text-slate-900">Employees Master</h3>
-          <p className="text-xs text-slate-500 max-w-md">
-            Manage your company's civil engineers, supervisors, and administrative personnel.
-          </p>
-          <button
-            onClick={() => setIsEmployeeModalOpen(true)}
-            className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/25 transition-all cursor-pointer"
-          >
-            <Plus size={15} />
-            <span>Add Employee</span>
-          </button>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-slate-500">Total Staff</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">{employees.length}</div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-emerald-700">Active Duty</div>
+              <div className="text-2xl font-black text-emerald-700 mt-1">
+                {employees.filter((e) => e.status === 'Active').length}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-blue-700">Permanent Roles</div>
+              <div className="text-2xl font-black text-blue-700 mt-1">
+                {employees.filter((e) => e.employmentType === 'Permanent').length}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-amber-700">On Contract</div>
+              <div className="text-2xl font-black text-amber-700 mt-1">
+                {employees.filter((e) => e.employmentType === 'Contract').length}
+              </div>
+            </div>
+          </div>
+
+          {/* Employees Table */}
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            {loadingEmployees ? (
+              <div className="p-12 text-center text-slate-400">
+                <Clock size={28} className="mx-auto mb-2 text-slate-300 animate-spin" />
+                <div className="font-semibold text-slate-600">Loading employees from database...</div>
+              </div>
+            ) : filteredEmployees.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 space-y-3">
+                <HardHat size={32} className="mx-auto text-slate-300" />
+                <div className="font-bold text-slate-700 text-sm">No employees found</div>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  {searchQuery
+                    ? 'No employees match your search query.'
+                    : 'No employees recorded yet. Click "Add Employee" above to add your first staff member.'}
+                </p>
+                <button
+                  onClick={() => setIsEmployeeModalOpen(true)}
+                  className="inline-flex items-center gap-2 bg-[#008744] text-white rounded-xl px-4 py-2 text-xs font-bold cursor-pointer hover:bg-[#00743a] transition-all"
+                >
+                  <Plus size={14} />
+                  <span>Add First Employee</span>
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/70">
+                      <th className="py-3.5 px-4">Employee</th>
+                      <th className="py-3.5 px-4">Role & Dept</th>
+                      <th className="py-3.5 px-4">Contact</th>
+                      <th className="py-3.5 px-4">Assigned Site</th>
+                      <th className="py-3.5 px-4 text-right">Salary (₹)</th>
+                      <th className="py-3.5 px-4 text-center">Status</th>
+                      <th className="py-3.5 px-4 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredEmployees.map((emp) => (
+                      <tr key={emp.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0">
+                              {emp.initials}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900 text-xs">{emp.name}</div>
+                              <span className="text-[10px] font-mono text-slate-500 font-semibold">{emp.empId}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-800">{emp.designation}</div>
+                          <span className="text-[10px] text-slate-500">{emp.department} • {emp.employmentType}</span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="text-slate-700 font-medium">{emp.phone}</div>
+                          <div className="text-[10px] text-slate-400">{emp.email}</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-medium text-slate-700">
+                          {emp.assignedSite}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-bold text-slate-900">
+                          ₹{emp.salary ? Number(emp.salary).toLocaleString('en-IN') : '0'}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          {emp.status === 'Active' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span>{emp.status}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => handleDeleteEmployee(emp.id)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors cursor-pointer"
+                            title="Delete employee"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Materials Tab Content */}
+      {/* ==================================== */}
+      {/* TAB 3: MATERIALS                     */}
+      {/* ==================================== */}
       {activeTab === 'Materials' && (
         <div className="space-y-4">
           {/* Action & Stats Bar */}
@@ -554,8 +854,8 @@ export default function MasterData({
                 onClick={() => setMaterialStatusFilter('Active')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   materialStatusFilter === 'Active'
-                    ? 'bg-emerald-700 text-white shadow-xs'
-                    : 'bg-white text-emerald-800 hover:bg-emerald-50 border border-emerald-200'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                 }`}
               >
                 Active ({materialsList.filter((m) => m.status === 'Active').length})
@@ -564,164 +864,161 @@ export default function MasterData({
                 onClick={() => setMaterialStatusFilter('Inactive')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   materialStatusFilter === 'Inactive'
-                    ? 'bg-rose-700 text-white shadow-xs'
-                    : 'bg-white text-rose-800 hover:bg-rose-50 border border-rose-200'
+                    ? 'bg-slate-600 text-white shadow-xs'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                 }`}
               >
-                Inactive / Discontinued ({materialsList.filter((m) => m.status === 'Inactive').length})
+                Inactive ({materialsList.filter((m) => m.status === 'Inactive').length})
               </button>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search materials..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
             </div>
           </div>
 
-          {/* Materials Table with Editable Default Price & Status Toggle */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
+          {/* Materials Table */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider">
-                    <th className="py-3.5 px-4 w-12 text-center">#</th>
-                    <th className="py-3.5 px-4">Material</th>
-                    <th className="py-3.5 px-4">Category</th>
-                    <th className="py-3.5 px-4">Unit</th>
-                    <th className="py-3.5 px-4">Default Price (Editable)</th>
-                    <th className="py-3.5 px-4 text-center">Stock Status</th>
-                    <th className="py-3.5 px-4 text-center">Quick Action</th>
+                  <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/70">
+                    <th className="py-3 px-4 w-12 text-center">#</th>
+                    <th className="py-3 px-4">Material Name</th>
+                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Unit</th>
+                    <th className="py-3 px-4 text-right">Master Rate (₹)</th>
+                    <th className="py-3 px-4 text-center">Status</th>
+                    <th className="py-3 px-4 text-center">Quick Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                <tbody className="divide-y divide-slate-100">
                   {materialsList
                     .filter((m) => {
-                      if (materialStatusFilter === 'Active') return m.status === 'Active';
-                      if (materialStatusFilter === 'Inactive') return m.status === 'Inactive';
-                      return true;
+                      const matchStatus =
+                        materialStatusFilter === 'All' || m.status === materialStatusFilter;
+                      const matchSearch =
+                        !searchQuery ||
+                        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (m.category && m.category.toLowerCase().includes(searchQuery.toLowerCase()));
+                      return matchStatus && matchSearch;
                     })
                     .map((mat, idx) => {
-                      const isEditing = editingPriceId === mat.id;
+                      const isEditingPrice = editingPriceId === mat.id;
                       const isActive = mat.status === 'Active';
 
                       return (
                         <tr
                           key={mat.id}
-                          className={`hover:bg-slate-50/80 transition-colors ${
-                            !isActive ? 'bg-slate-50/50 opacity-80' : ''
+                          className={`hover:bg-slate-50/70 transition-colors ${
+                            !isActive ? 'opacity-60 bg-slate-50/40' : ''
                           }`}
                         >
-                          {/* Number */}
-                          <td className="py-3.5 px-4 text-center text-slate-400 font-bold">
+                          <td className="py-3 px-4 text-center text-slate-400 font-medium">
                             {idx + 1}
                           </td>
-
-                          {/* Material Name & Photo */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 shadow-2xs">
+                              <div className="w-8 h-8 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200/80">
                                 <img
-                                  src={mat.image}
+                                  src={
+                                    mat.img ||
+                                    mat.image ||
+                                    'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=120&q=80'
+                                  }
                                   alt={mat.name}
                                   className="w-full h-full object-cover"
                                   onError={(e) => {
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src =
-                                      'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80';
+                                    e.target.src =
+                                      'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=120&q=80';
                                   }}
                                 />
                               </div>
                               <div>
-                                <div className="font-extrabold text-slate-900 text-xs md:text-sm">
-                                  {mat.name}
-                                </div>
-                                <div className="text-[10px] text-slate-500 line-clamp-1 max-w-xs">
-                                  {mat.description || 'Standard building material'}
-                                </div>
+                                <div className="font-bold text-slate-900">{mat.name}</div>
+                                {mat.code && (
+                                  <span className="text-[10px] font-mono text-slate-400">
+                                    {mat.code}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </td>
-
-                          {/* Category */}
-                          <td className="py-3.5 px-4">
-                            <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200/50">
-                              {mat.category}
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                              {mat.category || 'General'}
                             </span>
                           </td>
-
-                          {/* Unit */}
-                          <td className="py-3.5 px-4 font-semibold text-slate-800">
-                            {mat.unit}
+                          <td className="py-3 px-4 font-medium text-slate-700">
+                            {mat.unit || 'Units'}
                           </td>
-
-                          {/* Editable Default Price */}
-                          <td className="py-3.5 px-4">
-                            {isEditing ? (
-                              <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
-                                <span className="font-bold text-slate-500">₹</span>
+                          <td className="py-3 px-4 text-right">
+                            {isEditingPrice ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <span className="text-slate-400 font-medium">₹</span>
                                 <input
                                   type="number"
                                   step="any"
-                                  autoFocus
                                   value={editPriceVal}
                                   onChange={(e) => setEditPriceVal(e.target.value)}
-                                  className="w-24 px-2 py-1 bg-white border-2 border-emerald-500 rounded-lg text-xs font-black text-slate-900 focus:outline-none shadow-xs"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSavePrice(mat.id);
+                                    if (e.key === 'Escape') setEditingPriceId(null);
+                                  }}
+                                  className="w-20 px-2 py-1 bg-white border-2 border-blue-500 rounded-lg text-xs font-bold text-right text-slate-900 focus:outline-none"
+                                  autoFocus
                                 />
                                 <button
                                   onClick={() => handleSavePrice(mat.id)}
-                                  className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer"
-                                  title="Save Price"
+                                  className="p-1 rounded bg-blue-600 text-white hover:bg-blue-700"
                                 >
-                                  <Check size={14} />
+                                  <Check size={12} />
                                 </button>
                                 <button
                                   onClick={() => setEditingPriceId(null)}
-                                  className="w-7 h-7 rounded-lg border border-slate-300 text-slate-600 flex items-center justify-center hover:bg-slate-100 transition-colors cursor-pointer"
-                                  title="Cancel"
+                                  className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300"
                                 >
-                                  <X size={14} />
+                                  <X size={12} />
                                 </button>
                               </div>
                             ) : (
-                              <div
-                                onClick={() => handleStartEditPrice(mat)}
-                                className="group inline-flex items-center gap-2 cursor-pointer p-1 -m-1 rounded-lg hover:bg-slate-100 transition-colors"
-                                title="Click to edit default price"
-                              >
-                                <span className="font-black text-slate-900 text-sm">
-                                  ₹ {Number(mat.price).toLocaleString('en-IN')}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-normal">
-                                  / {mat.unit}
-                                </span>
-                                <span className="opacity-0 group-hover:opacity-100 text-blue-600 transition-opacity">
-                                  <Edit2 size={12} />
-                                </span>
+                              <div className="font-bold text-slate-900">
+                                ₹{Number(mat.price || 0).toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </div>
                             )}
                           </td>
-
-                          {/* Status Toggle (Active / Inactive) */}
-                          <td className="py-3.5 px-4 text-center">
+                          <td className="py-3 px-4 text-center">
                             <button
                               onClick={() => handleToggleStatus(mat.id)}
-                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-all ${
                                 isActive
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                                  : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80 hover:bg-emerald-100'
+                                  : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
                               }`}
-                              title={`Click to mark as ${isActive ? 'Inactive' : 'Active'}`}
                             >
                               <span
-                                className={`w-2 h-2 rounded-full ${
-                                  isActive ? 'bg-emerald-600' : 'bg-rose-600'
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isActive ? 'bg-emerald-500' : 'bg-slate-400'
                                 }`}
                               />
-                              <span>{mat.status}</span>
+                              <span>{isActive ? 'Active' : 'Inactive'}</span>
                             </button>
                           </td>
-
-                          {/* Quick Actions */}
-                          <td className="py-3.5 px-4 text-center">
+                          <td className="py-3 px-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => handleStartEditPrice(mat)}
-                                className="px-2.5 py-1 rounded-lg border border-slate-300 text-slate-700 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                                className="px-2.5 py-1 rounded-lg border border-slate-200 hover:border-blue-400 text-slate-600 hover:text-blue-600 text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
                               >
                                 <Edit2 size={11} />
                                 <span>Edit Rate</span>
@@ -748,7 +1045,7 @@ export default function MasterData({
       <AddEmployeeModal
         isOpen={isEmployeeModalOpen}
         onClose={() => setIsEmployeeModalOpen(false)}
-        onSaveEmployee={() => {}}
+        onSaveEmployee={handleSaveEmployee}
       />
 
       <AddMaterialModal
@@ -759,4 +1056,3 @@ export default function MasterData({
     </div>
   );
 }
-

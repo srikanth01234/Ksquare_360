@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { modalBackdropVariants, modalContentVariants } from '../utils/animations';
 import {
   X,
   Layers,
@@ -87,8 +89,12 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
       code: finalCode,
       name: formData.name,
       client: formData.client || 'Client',
+      contact: formData.contact || '',
       type: projectType,
       location: formData.city || 'Chennai',
+      address: formData.address || '',
+      startDate: formData.startDate || new Date().toISOString().split('T')[0],
+      expectedDate: formData.completionDate || '',
       budget: formData.budget ? `₹${formData.budget}` : '₹10,00,000',
       progress: formData.status === 'Completed' ? 100 : formData.status === 'On Hold' ? 30 : 15,
       status: formData.status || 'Active',
@@ -99,9 +105,23 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
-        {/* Header */}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+        >
+          <motion.div
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden"
+          >
+            {/* Header */}
         <div className="flex items-start justify-between px-7 pt-6 pb-4 border-b border-slate-100">
           <div className="flex items-start gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100/80 text-emerald-600 flex items-center justify-center shadow-xs shrink-0">
@@ -485,8 +505,10 @@ export default function AddSiteModal({ isOpen, onClose, onAddSite }) {
             </button>
           </div>
         </form>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

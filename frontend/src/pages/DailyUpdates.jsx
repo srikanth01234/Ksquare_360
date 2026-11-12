@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CalendarCheck,
   Building2,
@@ -26,6 +26,8 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
+import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
+import { siteApi, dailyUpdateApi, expenseApi } from '../services/api';
 
 export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   // Navigation: null = All Sites Cards View; object = Dedicated Site Daily Updates Detail View
@@ -33,177 +35,125 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
 
   // Modals & Filters
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [siteFilterStatus, setSiteFilterStatus] = useState('All'); // 'All' | 'Active' | 'Completed' | 'On Hold'
   const [activitySearchQuery, setActivitySearchQuery] = useState('');
   const [selectedActivityFilter, setSelectedActivityFilter] = useState('All Activities');
   const [viewMode, setViewMode] = useState('list');
 
-  // Construction Sites Directory with Structured Codes, Status, Updates Count, and Last Updated
-  const [sitesDirectory, setSitesDirectory] = useState([
-    {
-      id: '01',
-      name: 'Green Villa',
-      code: 'CHN-11-2026-NB-01',
-      shortCode: 'KS-001',
-      location: 'Chennai',
-      client: 'Arun Kumar',
-      status: 'Active',
-      updatesCount: 12,
-      lastUpdated: 'Today',
-      progress: 75,
-    },
-    {
-      id: '02',
-      name: 'Office Renovation',
-      code: 'MDU-10-2026-RE-02',
-      shortCode: 'KS-002',
-      location: 'Madurai',
-      client: 'Kumar',
-      status: 'Active',
-      updatesCount: 8,
-      lastUpdated: 'Yesterday',
-      progress: 48,
-    },
-    {
-      id: '03',
-      name: 'RK Residence',
-      code: 'TNV-09-2026-NB-03',
-      shortCode: 'KS-004',
-      location: 'Tirunelveli',
-      client: 'Suresh',
-      status: 'On Hold',
-      updatesCount: 6,
-      lastUpdated: '31 Oct 2026',
-      progress: 30,
-    },
-    {
-      id: '04',
-      name: 'Metro Apartment',
-      code: 'CHN-08-2026-NB-04',
-      shortCode: 'KS-005',
-      location: 'Chennai',
-      client: 'Manikandan',
-      status: 'Active',
-      updatesCount: 9,
-      lastUpdated: '30 Oct 2026',
-      progress: 60,
-    },
-    {
-      id: '05',
-      name: 'Sunshine Enclave',
-      code: 'TRY-05-2026-NB-05',
-      shortCode: 'KS-006',
-      location: 'Trichy',
-      client: 'Ganesh',
-      status: 'Completed',
-      updatesCount: 15,
-      lastUpdated: '25 Oct 2026',
-      progress: 100,
-    },
-  ]);
+  // Live Sites Directory from MongoDB Atlas
+  const [sitesDirectory, setSitesDirectory] = useState([]);
 
-  // Daily Updates Activity Records
-  const [updates, setUpdates] = useState([
-    {
-      id: '01',
-      date: '01 Nov 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      activity: 'Foundation Work Continued',
-      description: 'Column foundation reinforcement and formwork setup completed.',
-      labourCount: 6,
-      materialsUsed: 'Steel, Cement',
-      duration: '8 hrs',
-      progress: 60,
-      status: 'In Progress',
-    },
-    {
-      id: '02',
-      date: '01 Nov 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      activity: 'Plinth Beam Curing',
-      description: 'Morning and evening water curing for ground beam.',
-      labourCount: 2,
-      materialsUsed: 'Water',
-      duration: '3 hrs',
-      progress: 90,
-      status: 'Completed',
-    },
-    {
-      id: '03',
-      date: '31 Oct 2026',
-      siteName: 'RK Residence',
-      siteCode: 'KS-004',
-      activity: 'Brick Work in Progress',
-      description: 'Ground floor brick work (East wall) – 45% completed.',
-      labourCount: 4,
-      materialsUsed: 'Bricks, M-Sand',
-      duration: '7 hrs',
-      progress: 45,
-      status: 'In Progress',
-    },
-    {
-      id: '04',
-      date: '31 Oct 2026',
-      siteName: 'Metro Apartment',
-      siteCode: 'KS-005',
-      activity: 'Plastering Work Started',
-      description: 'Internal wall plastering started in Block A – 1st Floor.',
-      labourCount: 5,
-      materialsUsed: 'Cement, Sand',
-      duration: '6 hrs',
-      progress: 30,
-      status: 'In Progress',
-    },
-    {
-      id: '05',
-      date: '30 Oct 2026',
-      siteName: 'Office Renovation',
-      siteCode: 'KS-002',
-      activity: 'Painting Work',
-      description: 'Primer coating completed in all rooms.',
-      labourCount: 3,
-      materialsUsed: 'Paint, Primer',
-      duration: '5 hrs',
-      progress: 100,
-      status: 'Completed',
-    },
-    {
-      id: '06',
-      date: '29 Oct 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      activity: 'Site Preparation & Leveling',
-      description: 'Leveling and cleaning work completed before excavation.',
-      labourCount: 4,
-      materialsUsed: 'Sand, Gravel',
-      duration: '4 hrs',
-      progress: 100,
-      status: 'Completed',
-    },
-    {
-      id: '07',
-      date: '25 Oct 2026',
-      siteName: 'Sunshine Enclave',
-      siteCode: 'KS-006',
-      activity: 'Final Handover Inspection',
-      description: 'Client walk-through and handover punch list signoff.',
-      labourCount: 2,
-      materialsUsed: '-',
-      duration: '5 hrs',
-      progress: 100,
-      status: 'Completed',
-    },
-  ]);
+  // Live Daily Updates Activity Records from MongoDB Atlas
+  const [updates, setUpdates] = useState([]);
+
+  useEffect(() => {
+    loadSitesAndUpdates();
+  }, []);
+
+  const loadSitesAndUpdates = async () => {
+    try {
+      const [overviewRes, updatesRes] = await Promise.all([
+        dailyUpdateApi.getSitesOverview().catch(() => siteApi.getAll().catch(() => ({ data: [] }))),
+        dailyUpdateApi.getAll().catch(() => ({ data: [] })),
+      ]);
+
+      const rawSites = overviewRes.data || overviewRes || [];
+      const formattedSites = rawSites.map((s, idx) => ({
+        ...s,
+        id: s._id || s.id || String(idx + 1).padStart(2, '0'),
+        shortCode: s.code ? s.code.split('-').slice(0, 2).join('-') : 'KS',
+        updatesCount: s.totalUpdatesCount ?? s.updatesCount ?? 0,
+        lastUpdated: s.lastUpdated ? new Date(s.lastUpdated).toLocaleDateString('en-IN') : 'Recent',
+        progress: s.progress ?? (s.status === 'Completed' ? 100 : s.status === 'On Hold' ? 30 : 15),
+      }));
+      setSitesDirectory(formattedSites);
+
+      const rawUpdates = updatesRes.data || updatesRes || [];
+      const formattedUpdates = rawUpdates.map((u, idx) => ({
+        ...u,
+        id: u._id || u.id || String(idx + 1).padStart(2, '0'),
+        date: u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'Today',
+        siteName: u.siteName || (u.site?.name) || 'Site',
+        siteCode: u.siteCode || (u.site?.code) || '',
+        activity: u.title || u.workPhase || u.activity || 'Site Work',
+        description: u.description || u.notes || '',
+        labourCount: u.workersCount ?? u.laboursPresent ?? u.labourCount ?? 0,
+        materialsUsed: u.materialsUsed || '-',
+        duration: u.duration || '8 hrs',
+        progress: u.progress || 50,
+        status: u.status || 'Completed',
+      }));
+      setUpdates(formattedUpdates);
+    } catch (err) {
+      console.warn('Could not load daily updates from backend:', err.message);
+      setSitesDirectory([]);
+      setUpdates([]);
+    }
+  };
+
+  const handleAddUpdate = async (updateData) => {
+    try {
+      const targetSiteId = updateData.siteId || (activeSite ? (activeSite._id || activeSite.id) : null);
+      if (targetSiteId) {
+        await dailyUpdateApi.create({
+          siteId: targetSiteId,
+          title: updateData.title || updateData.activity || 'Daily Progress',
+          description: updateData.description,
+          workPhase: updateData.workPhase || 'General Construction',
+          workersCount: updateData.workersCount || updateData.labourCount || 0,
+          notes: updateData.notes || '',
+          date: updateData.date,
+        });
+        await loadSitesAndUpdates();
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not save daily update to DB:', err.message);
+    }
+
+    setUpdates((prev) => [{ ...updateData, id: `tmp_${Date.now()}` }, ...prev]);
+  };
 
   // Handle adding an expense recorded from the Site Detail page
-  const handleAddExpenseFromModal = (newExp) => {
-    const targetSiteName = activeSite ? activeSite.name : newExp.siteName || 'Green Villa';
-    const targetSiteCode = activeSite
-      ? activeSite.shortCode || activeSite.code
+  const handleAddExpenseFromModal = async (newExp) => {
+    const targetSite = activeSite || sitesDirectory.find((s) => s.name === newExp.siteName || s.code === newExp.siteCode);
+    const siteId = targetSite ? (targetSite._id || targetSite.id) : null;
+    const targetSiteName = targetSite ? targetSite.name : newExp.siteName || 'Site';
+    const targetSiteCode = targetSite
+      ? targetSite.shortCode || targetSite.code
       : newExp.siteCode || 'KS-001';
+
+    try {
+      if (siteId) {
+        await expenseApi.create({
+          ...newExp,
+          site: siteId,
+          siteId,
+          siteName: targetSiteName,
+          siteCode: targetSiteCode,
+        });
+        await dailyUpdateApi.create({
+          siteId,
+          title: `${newExp.category} Expense: ${newExp.description}`,
+          description: `${newExp.description} (₹${newExp.amount}) - ${newExp.paymentStatus}`,
+          workPhase: newExp.category,
+          workersCount: newExp.category === 'Labour' ? Number(newExp.quantity) || 4 : 0,
+          date: newExp.date || new Date().toISOString(),
+        });
+        await loadSitesAndUpdates();
+        onExpenseAdded({
+          ...newExp,
+          siteName: targetSiteName,
+          siteCode: targetSiteCode,
+          siteId,
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed saving expense update to DB:', err.message);
+    }
 
     const formattedUpdate = {
       id: String(updates.length + 1).padStart(2, '0'),
@@ -226,7 +176,6 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
 
     setUpdates([formattedUpdate, ...updates]);
 
-    // Update the site's update count
     setSitesDirectory((prev) =>
       prev.map((s) =>
         s.name === targetSiteName
@@ -242,8 +191,16 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
     });
   };
 
-  const handleDeleteUpdate = (id) => {
-    setUpdates(updates.filter((u) => u.id !== id));
+  const handleDeleteUpdate = async (id) => {
+    try {
+      if (id && !String(id).startsWith('tmp_')) {
+        await dailyUpdateApi.delete(id);
+      }
+    } catch (err) {
+      console.warn('Could not delete daily update in DB:', err.message);
+    }
+    setUpdates((prev) => prev.filter((u) => u.id !== id && u._id !== id));
+    loadSitesAndUpdates();
   };
 
   // Filtered sites for Cards view
@@ -543,8 +500,15 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
               </div>
             </div>
 
-            {/* Prominent Add Expense Button (User Request: "Then need the 'Add Expense' button") */}
+            {/* Action Buttons */}
             <div className="flex items-center gap-3 self-stretch sm:self-auto justify-end">
+              <button
+                onClick={() => setIsUpdateModalOpen(true)}
+                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold shadow-2xs transition-all cursor-pointer whitespace-nowrap"
+              >
+                <Plus size={15} className="text-emerald-600" />
+                <span>+ Log Update</span>
+              </button>
               <button
                 onClick={() => setIsExpenseModalOpen(true)}
                 className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/20 transition-all cursor-pointer whitespace-nowrap"
@@ -777,6 +741,19 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
             ? `${activeSite.name} (${activeSite.shortCode || activeSite.code})`
             : null
         }
+      />
+
+      {/* Add Daily Update Modal */}
+      <AddDailyUpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        onAddUpdate={handleAddUpdate}
+        lockedSite={
+          activeSite
+            ? `${activeSite.name} (${activeSite.shortCode || activeSite.code})`
+            : null
+        }
+        sites={sitesDirectory}
       />
     </div>
   );

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { pageVariants } from './utils/animations';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
@@ -26,81 +28,8 @@ export default function App() {
   // Global shared materials catalog (syncs real-time between Master Data and Godown Stock)
   const [materials, setMaterials] = useState(INITIAL_MATERIALS);
 
-  // Global shared expenses state (added from Daily Updates screen and visible across Site Expenses)
-  const [expenses, setExpenses] = useState([
-    {
-      id: '01',
-      date: '01 Nov 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Materials',
-      categoryColor: 'bg-emerald-50 text-emerald-700 border-emerald-200/80',
-      description: 'Cement – 50 Bags',
-      supplier: 'SM Traders',
-      amount: '₹18,000',
-      paymentStatus: 'Paid',
-    },
-    {
-      id: '02',
-      date: '01 Nov 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Labour',
-      categoryColor: 'bg-sky-50 text-sky-700 border-sky-200/80',
-      description: 'Mason wages – 4 Workers',
-      supplier: '-',
-      amount: '₹4,000',
-      paymentStatus: 'Paid',
-    },
-    {
-      id: '03',
-      date: '31 Oct 2026',
-      siteName: 'RK Residence',
-      siteCode: 'KS-004',
-      category: 'Vehicle Rent',
-      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
-      description: 'Lorry rent – Material transport',
-      supplier: 'City Lorry Service',
-      amount: '₹3,500',
-      paymentStatus: 'Pending',
-    },
-    {
-      id: '04',
-      date: '31 Oct 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Rent',
-      categoryColor: 'bg-amber-50 text-amber-800 border-amber-200/80',
-      description: 'Concrete Mixer machine – 3 Days',
-      supplier: 'BuildEquip Rentals',
-      amount: '₹3,600',
-      paymentStatus: 'Paid',
-    },
-    {
-      id: '05',
-      date: '30 Oct 2026',
-      siteName: 'Metro Apartment',
-      siteCode: 'KS-005',
-      category: 'Other',
-      categoryColor: 'bg-slate-100 text-slate-700 border-slate-200',
-      description: 'Site cleaning & waste removal',
-      supplier: 'CleanWork Services',
-      amount: '₹1,200',
-      paymentStatus: 'Partial',
-    },
-    {
-      id: '06',
-      date: '28 Oct 2026',
-      siteName: 'Green Villa',
-      siteCode: 'KS-001',
-      category: 'Additional Work',
-      categoryColor: 'bg-purple-50 text-purple-700 border-purple-200/80',
-      description: 'Parapet wall 2ft extension & plastering',
-      supplier: 'Ravi Mason Contractors',
-      amount: '₹35,000',
-      paymentStatus: 'Paid',
-    },
-  ]);
+  // Global shared expenses state
+  const [expenses, setExpenses] = useState([]);
 
   const handleAddExpense = (newExp) => {
     const formatted = {
@@ -176,78 +105,113 @@ export default function App() {
               ? 'User Management'
               : activeNav
           }
+          onBack={
+            selectedSite
+              ? () => setSelectedSite(null)
+              : selectedSiteExpense
+              ? () => setSelectedSiteExpense(null)
+              : isCreatingInvoice
+              ? () => setIsCreatingInvoice(false)
+              : null
+          }
         />
 
         {/* 3. Page Content */}
-        <main className="flex-1 w-full">
-          {activeNav === 'Dashboard' && <Dashboard />}
-
-          {activeNav === 'Sites' && !selectedSite && (
-            <Sites onSelectSite={(site) => setSelectedSite(site)} />
-          )}
-
-          {activeNav === 'Sites' && selectedSite && (
-            <SiteDetails
-              site={selectedSite}
-              onBack={() => setSelectedSite(null)}
-            />
-          )}
-
-          {activeNav === 'Godown' && (
-            <Godown materials={materials} setMaterials={setMaterials} />
-          )}
-
-          {activeNav === 'Labour' && <Labour />}
-
-          {activeNav === 'Site Expenses' && !selectedSiteExpense && (
-            <SiteExpenses
-              sharedExpenses={expenses}
-              onSelectSiteExpense={(exp) =>
-                setSelectedSiteExpense({
-                  name: exp.siteName,
-                  code: exp.siteCode,
-                  location: 'Chennai, TN',
-                  client: 'Arun Kumar',
-                  startDate: '12 Jan 2026',
-                  status: 'Active',
-                })
+        <main className="flex-1 w-full flex flex-col">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={
+                selectedSite
+                  ? `site-details-${selectedSite._id || selectedSite.code || selectedSite.name}`
+                  : selectedSiteExpense
+                  ? `expense-details-${selectedSiteExpense.code || selectedSiteExpense.name}`
+                  : isCreatingInvoice
+                  ? 'create-invoice'
+                  : activeNav
               }
-            />
-          )}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="w-full flex-1 flex flex-col"
+            >
+              {activeNav === 'Dashboard' && (
+                <Dashboard
+                  onNavigate={(nav, site) => {
+                    setActiveNav(nav);
+                    if (site) setSelectedSite(site);
+                  }}
+                />
+              )}
 
-          {activeNav === 'Site Expenses' && selectedSiteExpense && (
-            <SiteExpenseDetails
-              site={selectedSiteExpense}
-              onBack={() => setSelectedSiteExpense(null)}
-            />
-          )}
+              {activeNav === 'Sites' && !selectedSite && (
+                <Sites onSelectSite={(site) => setSelectedSite(site)} />
+              )}
 
-          {activeNav === 'Payments' && <Payments />}
+              {activeNav === 'Sites' && selectedSite && (
+                <SiteDetails
+                  site={selectedSite}
+                  onBack={() => setSelectedSite(null)}
+                />
+              )}
 
-          {activeNav === 'Daily Updates' && (
-            <DailyUpdates onExpenseAdded={handleAddExpense} />
-          )}
+              {activeNav === 'Godown' && (
+                <Godown materials={materials} setMaterials={setMaterials} />
+              )}
 
-          {activeNav === 'Billing & Invoices' && !isCreatingInvoice && (
-            <BillingInvoices
-              onCreateInvoiceClick={() => setIsCreatingInvoice(true)}
-            />
-          )}
+              {activeNav === 'Labour' && <Labour />}
 
-          {activeNav === 'Billing & Invoices' && isCreatingInvoice && (
-            <CreateInvoice
-              onBack={() => setIsCreatingInvoice(false)}
-              onInvoiceCreated={() => setIsCreatingInvoice(false)}
-            />
-          )}
+              {activeNav === 'Site Expenses' && !selectedSiteExpense && (
+                <SiteExpenses
+                  sharedExpenses={expenses}
+                  onSelectSiteExpense={(exp) =>
+                    setSelectedSiteExpense({
+                      name: exp.siteName,
+                      code: exp.siteCode,
+                      location: 'Chennai, TN',
+                      client: 'Arun Kumar',
+                      startDate: '12 Jan 2026',
+                      status: 'Active',
+                    })
+                  }
+                />
+              )}
 
-          {(activeNav === 'Completed Sites' || activeNav === 'Reports') && <Reports />}
+              {activeNav === 'Site Expenses' && selectedSiteExpense && (
+                <SiteExpenseDetails
+                  site={selectedSiteExpense}
+                  onBack={() => setSelectedSiteExpense(null)}
+                />
+              )}
 
-          {activeNav === 'Master Data' && (
-            <MasterData materials={materials} setMaterials={setMaterials} />
-          )}
+              {activeNav === 'Payments' && <Payments />}
 
-          {activeNav === 'Settings' && <Settings />}
+              {activeNav === 'Daily Updates' && (
+                <DailyUpdates onExpenseAdded={handleAddExpense} />
+              )}
+
+              {activeNav === 'Billing & Invoices' && !isCreatingInvoice && (
+                <BillingInvoices
+                  onCreateInvoiceClick={() => setIsCreatingInvoice(true)}
+                />
+              )}
+
+              {activeNav === 'Billing & Invoices' && isCreatingInvoice && (
+                <CreateInvoice
+                  onBack={() => setIsCreatingInvoice(false)}
+                  onInvoiceCreated={() => setIsCreatingInvoice(false)}
+                />
+              )}
+
+              {(activeNav === 'Completed Sites' || activeNav === 'Reports') && <Reports />}
+
+              {activeNav === 'Master Data' && (
+                <MasterData materials={materials} setMaterials={setMaterials} />
+              )}
+
+              {activeNav === 'Settings' && <Settings />}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

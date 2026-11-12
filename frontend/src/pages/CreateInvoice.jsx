@@ -85,7 +85,18 @@ export default function CreateInvoice({ onBack = () => {}, onInvoiceCreated = ()
   };
 
   return (
-    <div className="p-5 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+    <div className="p-5 md:p-8 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+      {/* 0. Top Back Button */}
+      <div>
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-emerald-700 text-xs font-bold shadow-2xs transition-all cursor-pointer"
+        >
+          <ArrowLeft size={15} />
+          <span>Back to Invoices</span>
+        </button>
+      </div>
+
       {/* 1. Header Banner */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">

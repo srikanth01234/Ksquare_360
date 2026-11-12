@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { modalBackdropVariants, modalContentVariants } from '../utils/animations';
 import {
   ArrowLeft,
   User,
@@ -25,39 +27,58 @@ export default function AddClientModal({ isOpen, onClose, onSaveClient }) {
     remarks: '',
   });
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.name) return;
+    if (!formData.name || !formData.name.trim()) return;
 
-    const initials = formData.name
-      .split(' ')
-      .slice(0, 2)
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase();
-
-    const newClient = {
-      id: Date.now().toString(),
-      initials: initials || 'CL',
-      name: formData.name,
+    onSaveClient({
+      name: formData.name.trim(),
       type: formData.type,
-      phone: formData.phone ? `+91 ${formData.phone}` : '+91 98765 43210',
-      email: formData.email || `${formData.name.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
-      location: formData.city ? `${formData.city}, TN` : 'Chennai, TN',
-      projects: '1 Project',
+      phone: formData.phone.trim(),
+      email: formData.email.trim(),
+      address1: formData.address1.trim(),
+      address2: formData.address2.trim(),
+      city: formData.city.trim(),
+      state: formData.state.trim() || 'Tamil Nadu',
+      pincode: formData.pincode.trim(),
+      gst: formData.gst.trim(),
+      remarks: formData.remarks.trim(),
       status: 'Active',
-    };
-
-    onSaveClient(newClient);
+    });
+    setFormData({
+      type: 'Individual',
+      name: '',
+      phone: '',
+      email: '',
+      address1: '',
+      address2: '',
+      city: '',
+      state: '',
+      pincode: '',
+      gst: '',
+      remarks: '',
+    });
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
-        {/* Header with Villa Banner */}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+        >
+          <motion.div
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden"
+          >
+            {/* Header with Villa Banner */}
         <div className="relative flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-emerald-50/50 via-white to-white overflow-hidden">
           <div className="flex items-center gap-3 relative z-10">
             <button
@@ -316,8 +337,10 @@ export default function AddClientModal({ isOpen, onClose, onSaveClient }) {
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
   );
 }
 

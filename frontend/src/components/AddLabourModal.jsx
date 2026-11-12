@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { modalBackdropVariants, modalContentVariants } from '../utils/animations';
 import {
   X,
   HardHat,
@@ -17,16 +19,25 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import { LABOUR_WORKER_TYPES } from '../constants/constructionData';
+import { siteApi } from '../services/api';
 
-export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
+export default function AddLabourModal({
+  isOpen,
+  onClose,
+  onAddLabour,
+  workerToEdit = null,
+  onUpdateLabour = null,
+}) {
+  const [sitesList, setSitesList] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     labourType: 'Mason',
-    assignedSite: 'Green Villa (KS-001)',
+    assignedSite: '',
+    siteId: '',
     dailyWage: '1000',
     otRate: '100',
-    joiningDate: '2026-06-10',
+    joiningDate: new Date().toISOString().split('T')[0],
     status: 'Active',
     address: '',
     aadhaarNumber: '',
@@ -34,15 +45,78 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
     photo: '',
   });
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen) {
+      if (workerToEdit) {
+        setFormData({
+          name: workerToEdit.name || '',
+          phone: workerToEdit.phone || '',
+          labourType: workerToEdit.workerType || workerToEdit.labourType || workerToEdit.type || 'Mason',
+          assignedSite: workerToEdit.siteName ? `${workerToEdit.siteName} (${workerToEdit.siteCode || ''})` : '',
+          siteId: workerToEdit.currentSite?._id || workerToEdit.currentSite || workerToEdit.siteId || '',
+          dailyWage: String(workerToEdit.dailyWageNum ?? (typeof workerToEdit.dailyWage === 'number' ? workerToEdit.dailyWage : parseFloat(String(workerToEdit.dailyWage || '').replace(/[^\d.]/g, '')) || 1000)),
+          otRate: String(workerToEdit.overtimeRate ?? (typeof workerToEdit.otRate === 'number' ? workerToEdit.otRate : parseFloat(String(workerToEdit.otRate || '').replace(/[^\d.]/g, '')) || 100)),
+          joiningDate: workerToEdit.joiningDate && !isNaN(new Date(workerToEdit.joiningDate).getTime()) ? new Date(workerToEdit.joiningDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          status: workerToEdit.status || 'Active',
+          address: workerToEdit.address || '',
+          aadhaarNumber: workerToEdit.aadhaarNumber || '',
+          panNumber: workerToEdit.panNumber || '',
+          photo: workerToEdit.photoUrl || workerToEdit.avatar || '',
+        });
+      } else {
+        setFormData({
+          name: '',
+          phone: '',
+          labourType: 'Mason',
+          assignedSite: '',
+          siteId: '',
+          dailyWage: '1000',
+          otRate: '100',
+          joiningDate: new Date().toISOString().split('T')[0],
+          status: 'Active',
+          address: '',
+          aadhaarNumber: '',
+          panNumber: '',
+          photo: '',
+        });
+      }
+
+      siteApi.getAll().then((res) => {
+        const list = res.data || res || [];
+        setSitesList(list);
+        if (!workerToEdit && list.length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            assignedSite: prev.assignedSite || `${list[0].name} (${list[0].code})`,
+            siteId: prev.siteId || list[0]._id,
+          }));
+        }
+      }).catch((err) => {
+        console.warn('Could not fetch sites in AddLabourModal:', err.message);
+      });
+    }
+  }, [isOpen, workerToEdit]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name) return;
 
-    const siteParts = formData.assignedSite.split(' (');
-    const siteName = siteParts[0] || 'Green Villa';
-    const siteCode = siteParts[1] ? siteParts[1].replace(')', '') : 'KS-001';
+    let siteId = formData.siteId;
+    let siteName = 'Site';
+    let siteCode = '';
+
+    const matched = sitesList.find(
+      (s) => `${s.name} (${s.code})` === formData.assignedSite || s._id === formData.assignedSite
+    );
+    if (matched) {
+      siteId = matched._id;
+      siteName = matched.name;
+      siteCode = matched.code;
+    } else if (formData.assignedSite) {
+      const siteParts = formData.assignedSite.split(' (');
+      siteName = siteParts[0] || 'Site';
+      siteCode = siteParts[1] ? siteParts[1].replace(')', '') : '';
+    }
 
     const defaultAvatars = [
       'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80',
@@ -54,30 +128,54 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
       formData.photo.trim() ||
       defaultAvatars[Math.floor(Math.random() * defaultAvatars.length)];
 
-    const newWorker = {
-      id: Date.now().toString(),
+    const workerPayload = {
       name: formData.name,
       phone: formData.phone || '+91 98765 43210',
       labourType: formData.labourType,
+      workerType: formData.labourType,
+      currentSite: siteId || null,
+      siteId: siteId || null,
       siteName: siteName,
       siteCode: siteCode,
-      dailyWage: `₹${formData.dailyWage}`,
-      otRate: `₹${formData.otRate}`,
-      joiningDate: formData.joiningDate,
-      status: formData.status,
-      address: formData.address || 'Chennai, Tamil Nadu',
+      dailyWage: parseFloat(formData.dailyWage) || 800,
+      overtimeRate: parseFloat(formData.otRate) || 100,
+      joiningDate: formData.joiningDate || new Date().toISOString(),
+      status: formData.status || 'Active',
+      address: formData.address || '',
       aadhaarNumber: formData.aadhaarNumber || '',
       panNumber: formData.panNumber || '',
+      photoUrl: finalAvatar,
       avatar: finalAvatar,
     };
 
-    onAddLabour(newWorker);
+    if (workerToEdit && onUpdateLabour) {
+      onUpdateLabour(workerToEdit._id || workerToEdit.id, workerPayload);
+    } else {
+      onAddLabour({
+        ...workerPayload,
+        id: Date.now().toString(),
+      });
+    }
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          variants={modalBackdropVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
+        >
+          <motion.div
+            variants={modalContentVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 my-8 overflow-hidden"
+          >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -85,9 +183,13 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
               <HardHat size={22} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Add New Labour</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                {workerToEdit ? 'Edit Labour Worker' : 'Add New Labour'}
+              </h2>
               <p className="text-xs text-slate-500">
-                Register a new worker with wage, KYC details, address, and site assignment.
+                {workerToEdit
+                  ? 'Update worker details, wages, KYC, and site assignment.'
+                  : 'Register a new worker with wage, KYC details, address, and site assignment.'}
               </p>
             </div>
           </div>
@@ -168,14 +270,26 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
                 <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <select
                   value={formData.assignedSite}
-                  onChange={(e) => setFormData({ ...formData, assignedSite: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const match = sitesList.find((s) => s._id === val || `${s.name} (${s.code})` === val);
+                    setFormData({
+                      ...formData,
+                      assignedSite: match ? `${match.name} (${match.code})` : val,
+                      siteId: match ? match._id : '',
+                    });
+                  }}
                   className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                 >
-                  <option value="Green Villa (KS-001)">Green Villa (KS-001)</option>
-                  <option value="Office Renovation (KS-002)">Office Renovation (KS-002)</option>
-                  <option value="Dream House (KS-003)">Dream House (KS-003)</option>
-                  <option value="RK Residence (KS-004)">RK Residence (KS-004)</option>
-                  <option value="Metro Apartment (KS-005)">Metro Apartment (KS-005)</option>
+                  {sitesList.length === 0 ? (
+                    <option value="">No sites available</option>
+                  ) : (
+                    sitesList.map((s) => (
+                      <option key={s._id || s.id} value={`${s.name} (${s.code})`}>
+                        {s.name} ({s.code})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
@@ -332,12 +446,14 @@ export default function AddLabourModal({ isOpen, onClose, onAddLabour }) {
               className="px-5 py-2.5 rounded-xl bg-[#008744] hover:bg-[#00743a] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
             >
               <Plus size={15} />
-              <span>Add Worker</span>
+              <span>{workerToEdit ? 'Save Changes' : 'Add Worker'}</span>
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
   );
 }
 
