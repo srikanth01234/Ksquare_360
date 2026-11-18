@@ -16,9 +16,16 @@ const PORT = process.env.PORT || 5000;
 connectDB();
 
 // Middleware
+const corsOrigin = process.env.CORS_ORIGIN;
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: corsOrigin
+      ? corsOrigin.includes(',')
+        ? corsOrigin.split(',').map((o) => o.trim())
+        : corsOrigin === '*'
+        ? '*'
+        : corsOrigin
+      : ['http://localhost:5173', 'http://localhost:3000'],
     credentials: true,
   })
 );

@@ -3,7 +3,7 @@
  * Connects React 19 Frontend with Node.js / Express / MongoDB Atlas Backend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ksquare-360-backend.onrender.com/api';
 
 /**
  * Universal request helper with error handling & JSON formatting
