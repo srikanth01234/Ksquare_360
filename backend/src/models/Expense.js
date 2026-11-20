@@ -52,6 +52,23 @@ const expenseSchema = new mongoose.Schema(
       required: true,
       default: 'Materials',
     },
+    subCategory: {
+      type: String,
+      default: '',
+    },
+    expenseType: {
+      type: String,
+      enum: ['NORMAL', 'ADDITIONAL_WORK'],
+      default: 'NORMAL',
+    },
+    isAdditionalWork: {
+      type: Boolean,
+      default: false,
+    },
+    billableToClient: {
+      type: Boolean,
+      default: false,
+    },
     description: {
       type: String,
       required: true,

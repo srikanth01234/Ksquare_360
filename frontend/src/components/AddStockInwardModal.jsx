@@ -57,8 +57,6 @@ export default function AddStockInwardModal({
     }
   }, [materials, isOpen, initialMaterial]);
 
-  if (!isOpen) return null;
-
   const handleMaterialSelect = (selectedName) => {
     if (selectedName === '__NEW__') {
       setFormData({

@@ -23,11 +23,14 @@ import { siteApi } from '../services/api';
 
 export default function Sites({ onSelectSite = () => {} }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('All Locations');
   const [selectedType, setSelectedType] = useState('All Site Types');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
   // Live Sites Data from MongoDB Atlas
   const [sites, setSites] = useState([]);
@@ -98,6 +101,25 @@ export default function Sites({ onSelectSite = () => {} }) {
     }
   };
 
+  const handleUpdateSite = async (id, updatedSiteData) => {
+    try {
+      await siteApi.update(id, updatedSiteData);
+      await loadSites();
+      setEditingSite(null);
+    } catch (err) {
+      console.warn('API update fallback to local state:', err.message);
+      setSites((prev) =>
+        prev.map((s) => (s._id === id || s.id === id ? { ...s, ...updatedSiteData } : s))
+      );
+      setEditingSite(null);
+    }
+  };
+
+  // Reset pagination on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedLocation, selectedType, selectedStatus]);
+
   // Filtered sites by Search, Location, Type, and the 3 Site Statuses
   const filteredSites = sites.filter((site) => {
     const matchesSearch =
@@ -118,6 +140,12 @@ export default function Sites({ onSelectSite = () => {} }) {
 
     return matchesSearch && matchesLocation && matchesType && matchesStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredSites.length / itemsPerPage));
+  const paginatedSites = filteredSites.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
     <div className="p-6 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
@@ -145,10 +173,16 @@ export default function Sites({ onSelectSite = () => {} }) {
         </button>
       </div>
 
-      {/* 2. Stat Cards (Total Sites, Active Sites, Planning, Completed) */}
+      {/* 2. Stat Cards (Clickable Quick Filters) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Total Sites */}
-        <div className="bg-[#edf5ff] rounded-2xl p-5 border border-blue-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
+        <div
+          onClick={() => setSelectedStatus('All Status')}
+          className={`rounded-2xl p-5 border shadow-xs flex items-center gap-4 relative overflow-hidden cursor-pointer transition-all ${
+            selectedStatus === 'All Status' ? 'bg-[#edf5ff] border-blue-300 ring-2 ring-blue-500/20' : 'bg-white border-slate-200/80 hover:border-blue-200'
+          }`}
+          title="Filter all sites"
+        >
           <div className="w-13 h-13 rounded-2xl bg-[#0072ff]/10 text-[#0072ff] flex items-center justify-center shrink-0">
             <Building2 size={26} />
           </div>
@@ -159,7 +193,13 @@ export default function Sites({ onSelectSite = () => {} }) {
         </div>
 
         {/* Active Sites */}
-        <div className="bg-[#edfaf3] rounded-2xl p-5 border border-emerald-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
+        <div
+          onClick={() => setSelectedStatus(selectedStatus === 'Active' ? 'All Status' : 'Active')}
+          className={`rounded-2xl p-5 border shadow-xs flex items-center gap-4 relative overflow-hidden cursor-pointer transition-all ${
+            selectedStatus === 'Active' ? 'bg-[#edfaf3] border-emerald-400 ring-2 ring-emerald-500/20' : 'bg-white border-slate-200/80 hover:border-emerald-200'
+          }`}
+          title="Filter active sites"
+        >
           <div className="w-13 h-13 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
             <HardHat size={26} />
           </div>
@@ -172,7 +212,13 @@ export default function Sites({ onSelectSite = () => {} }) {
         </div>
 
         {/* Completed Sites */}
-        <div className="bg-[#f0f7ff] rounded-2xl p-5 border border-blue-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
+        <div
+          onClick={() => setSelectedStatus(selectedStatus === 'Completed' ? 'All Status' : 'Completed')}
+          className={`rounded-2xl p-5 border shadow-xs flex items-center gap-4 relative overflow-hidden cursor-pointer transition-all ${
+            selectedStatus === 'Completed' ? 'bg-[#f0f7ff] border-blue-400 ring-2 ring-blue-500/20' : 'bg-white border-slate-200/80 hover:border-blue-200'
+          }`}
+          title="Filter completed sites"
+        >
           <div className="w-13 h-13 rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
             <CheckCircle2 size={26} />
           </div>
@@ -185,7 +231,13 @@ export default function Sites({ onSelectSite = () => {} }) {
         </div>
 
         {/* On Hold */}
-        <div className="bg-[#fff9eb] rounded-2xl p-5 border border-amber-100/70 shadow-xs flex items-center gap-4 relative overflow-hidden">
+        <div
+          onClick={() => setSelectedStatus(selectedStatus === 'On Hold' ? 'All Status' : 'On Hold')}
+          className={`rounded-2xl p-5 border shadow-xs flex items-center gap-4 relative overflow-hidden cursor-pointer transition-all ${
+            selectedStatus === 'On Hold' ? 'bg-[#fff9eb] border-amber-400 ring-2 ring-amber-500/20' : 'bg-white border-slate-200/80 hover:border-amber-200'
+          }`}
+          title="Filter on hold sites"
+        >
           <div className="w-13 h-13 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
             <Clock size={26} />
           </div>
@@ -300,11 +352,13 @@ export default function Sites({ onSelectSite = () => {} }) {
                   </td>
                 </tr>
               ) : (
-                filteredSites.map((site) => (
-                <tr key={site.id} className="hover:bg-slate-50/70 transition-colors">
+                paginatedSites.map((site, idx) => {
+                  const rowNum = (currentPage - 1) * itemsPerPage + idx + 1;
+                  return (
+                <tr key={site.id || site._id} className="hover:bg-slate-50/70 transition-colors">
                   {/* Number */}
-                  <td className="py-4 px-4 text-center font-medium text-slate-400">
-                    {site.id}
+                  <td className="py-4 px-4 text-center font-bold text-slate-400">
+                    {rowNum}
                   </td>
 
                   {/* Site Name */}
@@ -405,21 +459,24 @@ export default function Sites({ onSelectSite = () => {} }) {
                       </button>
                       <button
                         title="Edit Site"
-                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50/50 transition-colors"
+                        onClick={() => setEditingSite(site)}
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50/50 transition-colors cursor-pointer"
                       >
                         <Edit2 size={14} />
                       </button>
                       <button
                         title="Delete Site"
-                        onClick={() => handleDeleteSite(site.id)}
-                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors"
+                        onClick={() => handleDeleteSite(site.id || site._id)}
+                        className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors cursor-pointer"
                       >
                         <Trash2 size={14} />
                       </button>
                     </div>
                   </td>
                 </tr>
-              )))}
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
@@ -427,40 +484,60 @@ export default function Sites({ onSelectSite = () => {} }) {
         {/* 5. Pagination Footer */}
         <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-100 gap-3">
           <div className="text-xs text-slate-500 font-medium">
-            Showing 1 – {filteredSites.length} of {sites.length} sites
+            Showing {filteredSites.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to{' '}
+            {Math.min(currentPage * itemsPerPage, filteredSites.length)} of {filteredSites.length} sites
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              title="Previous Page"
+            >
               <ChevronLeft size={15} />
             </button>
-            <button className="w-8 h-8 rounded-lg bg-[#0072ff] text-white font-bold text-xs shadow-xs">
-              1
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors">
-              2
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors">
-              3
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors">
-              4
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors">
-              5
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+            {Array.from({ length: totalPages }).map((_, i) => {
+              const pageNum = i + 1;
+              return (
+                <button
+                  key={pageNum}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-8 h-8 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                    currentPage === pageNum
+                      ? 'bg-[#0072ff] text-white shadow-xs'
+                      : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+              title="Next Page"
+            >
               <ChevronRight size={15} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Add New Site Modal */}
+      {/* Add / Edit Site Modal */}
       <AddSiteModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        isOpen={isModalOpen || !!editingSite}
+        siteToEdit={editingSite}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingSite(null);
+        }}
         onAddSite={handleAddSite}
+        onUpdateSite={handleUpdateSite}
       />
     </div>
   );

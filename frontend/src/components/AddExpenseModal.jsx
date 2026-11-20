@@ -9,6 +9,7 @@ import {
   Calendar,
   ShoppingCart,
   User,
+  Users,
   CreditCard,
   CheckCircle2,
   Circle,
@@ -25,6 +26,10 @@ import {
   Truck,
   Calculator,
   Coins,
+  Zap,
+  ShieldCheck,
+  Wallet,
+  Info,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
 import { siteApi } from '../services/api';
@@ -46,7 +51,33 @@ const isBrickOrBlockMaterial = (name) =>
     'AAC Block',
   ].includes(name);
 
-const STEEL_TYPES = ['20 mm', '16 mm', '12 mm', '10 mm', '8 mm', '6 mm'];
+const STEEL_TYPES = ['32 mm', '25 mm', '20 mm', '16 mm', '12 mm', '10 mm', '8 mm', '6 mm'];
+
+// Standard Unit Weight Chart for TMT Steel Bars (kg/m)
+// Civil Engineering Formula: W = (D² × L) / 162.2 (D in mm, L in meters)
+// 1 foot = 0.3048 meters
+const STEEL_UNIT_WEIGHTS = {
+  '6 mm': 0.222,
+  '8 mm': 0.395,
+  '10 mm': 0.617,
+  '12 mm': 0.888,
+  '16 mm': 1.580,
+  '20 mm': 2.470,
+  '25 mm': 3.850,
+  '32 mm': 6.313,
+};
+
+const calculateSteelWeight = (steelType, lengthFt) => {
+  const len = parseFloat(lengthFt);
+  if (!len || isNaN(len) || len <= 0) return '';
+  const unitWeight =
+    STEEL_UNIT_WEIGHTS[steelType] ||
+    (parseFloat(steelType) ? Math.pow(parseFloat(steelType), 2) / 162.2 : 0);
+  if (!unitWeight) return '';
+  const lengthMeters = len * 0.3048;
+  const weight = lengthMeters * unitWeight;
+  return (Math.round(weight * 100) / 100).toFixed(2);
+};
 const RING_TYPES = ['8 mm', '6 mm'];
 const BRICK_BLOCK_TYPES = [
   'Chamber Bricks',
@@ -92,6 +123,7 @@ export default function AddExpenseModal({
 }) {
   const fileInputRef = useRef(null);
   const [sitesList, setSitesList] = useState([]);
+  const [mainTab, setMainTab] = useState('Expenses'); // 'Expenses' | 'Additional Work'
   const [formData, setFormData] = useState({
     category: 'Materials',
     materialName: 'Cement',
@@ -116,6 +148,22 @@ export default function AddExpenseModal({
     rentalDuration: '1',
     rentalUnit: 'Days',
     rentalRate: '3000',
+    // Additional Work specific fields & metering
+    additionalWorkTitle: 'Compound Wall Extension',
+    additionalWorkContractor: '',
+    additionalWorkQty: '100',
+    additionalWorkUnit: 'Sq.Ft',
+    additionalWorkRate: '85',
+    additionalWorkClientApproved: true,
+    addlPricingMode: 'breakdown', // 'breakdown' | 'metering'
+    addlLabourRole: 'Mason',
+    addlLabourCount: '2',
+    addlLabourWage: '1000',
+    addlLabourDays: '2',
+    addlMachineryType: 'None',
+    addlMachineryDuration: '0',
+    addlMachineryUnit: 'Days',
+    addlMachineryRate: '0',
     // Lump sum or direct amount override
     customAmount: '',
     // Additional vehicle & tips for Materials
@@ -160,11 +208,15 @@ export default function AddExpenseModal({
       nextUnit = unit;
       nextRate = formData.rentalRate || '3000';
     } else if (newCat === 'Additional Work') {
-      nextDesc = 'Additional Site Work';
-      nextSupplier = '';
-      nextQty = '1';
-      nextUnit = 'Job';
-      nextRate = '';
+      const title = formData.additionalWorkTitle || 'Compound Wall Extension';
+      const q = formData.additionalWorkQty || '100';
+      const u = formData.additionalWorkUnit || 'Sq.Ft';
+      const r = formData.additionalWorkRate || '85';
+      nextDesc = `Additional Work: ${title} (${q} ${u})`;
+      nextSupplier = formData.additionalWorkContractor || '';
+      nextQty = q;
+      nextUnit = u;
+      nextRate = r;
     } else {
       nextDesc = 'Miscellaneous Site Expense';
       nextSupplier = '';
@@ -191,7 +243,7 @@ export default function AddExpenseModal({
   useEffect(() => {
     if (isOpen) {
       siteApi.getAll().then((res) => {
-        const list = res.data || res || [];
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
         setSitesList(list);
         if (!lockedSite && list.length > 0) {
           setFormData((prev) => ({
@@ -202,6 +254,7 @@ export default function AddExpenseModal({
         }
       }).catch((err) => {
         console.warn('Could not fetch sites for expense modal:', err.message);
+        setSitesList([]);
       });
     }
   }, [isOpen, lockedSite]);
@@ -217,6 +270,28 @@ export default function AddExpenseModal({
   const [materialItems, setMaterialItems] = useState([
     { id: 1, material: 'Cement', quantity: '50', unit: 'Bags', amount: '21000' },
   ]);
+
+  // Dynamic Additional Work Materials Table rows
+  const [addlMaterialItems, setAddlMaterialItems] = useState([
+    { id: 1, material: 'Cement', quantity: '10', unit: 'Bags', amount: '4200' },
+  ]);
+
+  const handleAddAddlMaterial = () => {
+    setAddlMaterialItems((prev) => [
+      ...prev,
+      { id: Date.now(), material: 'M-Sand', quantity: '1', unit: 'Load', amount: '3500' },
+    ]);
+  };
+
+  const handleRemoveAddlMaterial = (id) => {
+    setAddlMaterialItems((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const handleAddlMaterialChange = (id, field, value) => {
+    setAddlMaterialItems((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, [field]: value } : m))
+    );
+  };
 
   const [screenshotPreview, setScreenshotPreview] = useState(null);
   const [screenshotName, setScreenshotName] = useState('');
@@ -377,10 +452,36 @@ export default function AddExpenseModal({
   };
 
   const handleRowChange = (rowId, field, value) => {
-    setMaterialItems(
-      materialItems.map((item) =>
-        item.id === rowId ? { ...item, [field]: value } : item
-      )
+    setMaterialItems((prevItems) =>
+      prevItems.map((item) => {
+        if (item.id !== rowId) return item;
+        const updated = { ...item, [field]: value };
+
+        // Auto-calculate Steel weight when length or steelType changes
+        if (isSteelMaterial(formData.materialName)) {
+          if (field === 'length' || field === 'steelType') {
+            const currentType = field === 'steelType' ? value : (item.steelType || '12 mm');
+            const currentLen = field === 'length' ? value : item.length;
+            if (currentLen && parseFloat(currentLen) > 0) {
+              const calcWeight = calculateSteelWeight(currentType, currentLen);
+              updated.weight = calcWeight;
+              // If user already specified a rate per kg in formData.rate, also calculate amount
+              if (formData.rate && parseFloat(formData.rate) > 0 && calcWeight) {
+                updated.amount = String(Math.round(parseFloat(calcWeight) * parseFloat(formData.rate)));
+              }
+            } else if (!currentLen) {
+              updated.weight = '';
+            }
+          } else if (field === 'weight') {
+            // If user manually modifies weight, and rate exists, also update amount
+            if (formData.rate && parseFloat(formData.rate) > 0 && value && parseFloat(value) > 0) {
+              updated.amount = String(Math.round(parseFloat(value) * parseFloat(formData.rate)));
+            }
+          }
+        }
+
+        return updated;
+      })
     );
   };
 
@@ -427,15 +528,24 @@ export default function AddExpenseModal({
 
     const formattedAmount = `₹${totalExpenseAmount.toLocaleString('en-IN')}`;
 
+    const isAdditional = mainTab === 'Additional Work';
+    const finalCategory = isAdditional ? 'Additional Work' : formData.category;
+    const finalExpenseType = isAdditional ? 'ADDITIONAL_WORK' : 'NORMAL';
+    const finalBillable = isAdditional ? Boolean(formData.additionalWorkClientApproved) : false;
+
     const newExpense = {
       id: Date.now().toString(),
       siteId: siteId,
       siteName: siteName,
       siteCode: siteCode,
       date: formData.date,
-      category: formData.category,
+      category: finalCategory,
+      subCategory: formData.category,
+      expenseType: finalExpenseType,
+      isAdditionalWork: isAdditional,
+      billableToClient: finalBillable,
       materialName: formData.category === 'Materials' ? formData.materialName : null,
-      description: formData.description,
+      description: formData.description || (formData.materialName ? `${formData.materialName} Purchase` : 'Site Expense'),
       supplier: formData.supplier || '-',
       supplierName: formData.supplier || '-',
       invoiceNo: formData.invoiceNo || '-',
@@ -471,6 +581,7 @@ export default function AddExpenseModal({
       paymentScreenshot: screenshotPreview || null,
       notes: formData.notes || '',
       materialItems: formData.category === 'Materials' ? materialItems : [],
+      items: formData.category === 'Materials' ? materialItems : [],
     };
 
     onAddExpense(newExpense);
@@ -515,37 +626,146 @@ export default function AddExpenseModal({
           </button>
         </div>
 
+        {/* Top 2 Primary Tabs: Expenses (Normal Contract) vs Additional Work (Client Extra) */}
+        <div className="grid grid-cols-2 p-2.5 bg-slate-100/90 border-b border-slate-200/90 gap-2.5">
+          {/* Tab 1: Expenses */}
+          <button
+            type="button"
+            onClick={() => setMainTab('Expenses')}
+            className={`flex items-center justify-center gap-3 py-3 px-4 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              mainTab === 'Expenses'
+                ? 'bg-white text-emerald-900 shadow-sm border border-emerald-300 ring-2 ring-emerald-500/15'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
+            }`}
+          >
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                mainTab === 'Expenses'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs'
+                  : 'bg-slate-200/80 text-slate-500'
+              }`}
+            >
+              <Wallet size={16} />
+            </div>
+            <div className="text-left">
+              <div className="font-extrabold text-[13px] leading-tight flex items-center gap-1.5">
+                <span>Expenses</span>
+                {mainTab === 'Expenses' && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                )}
+              </div>
+              <div className="text-[10px] text-slate-500 font-semibold mt-0.5">
+                Normal Contract Expenses
+              </div>
+            </div>
+          </button>
+
+          {/* Tab 2: Additional Work Expenses */}
+          <button
+            type="button"
+            onClick={() => setMainTab('Additional Work')}
+            className={`flex items-center justify-center gap-3 py-3 px-4 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              mainTab === 'Additional Work'
+                ? 'bg-white text-purple-950 shadow-sm border border-purple-300 ring-2 ring-purple-500/15'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
+            }`}
+          >
+            <div
+              className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                mainTab === 'Additional Work'
+                  ? 'bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs'
+                  : 'bg-slate-200/80 text-slate-500'
+              }`}
+            >
+              <Zap size={16} />
+            </div>
+            <div className="text-left">
+              <div className="font-extrabold text-[13px] leading-tight flex items-center gap-1.5">
+                <span>Additional Work</span>
+                {mainTab === 'Additional Work' && (
+                  <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                )}
+              </div>
+              <div className="text-[10px] text-purple-700 font-semibold mt-0.5">
+                Additional Work Expenses
+              </div>
+            </div>
+          </button>
+        </div>
+
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="px-7 py-5 space-y-5 max-h-[78vh] overflow-y-auto">
-          {/* Section 1: Expense Details */}
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
-              <Layers size={13} />
-              <span>Expense Details</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-              {/* Category */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  Expense Category <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <Layers size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                  <select
-                    value={formData.category}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
-                  >
-                    <option value="Materials">Materials</option>
-                    <option value="Labour">Labour</option>
-                    <option value="Rental">Rental</option>
-                    <option value="Additional Work">Additional Work</option>
-                    <option value="Other">Other Expenses</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          {/* Top Notice Banner: Normal Contract vs Additional Work */}
+          {mainTab === 'Expenses' ? (
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/90 text-xs">
+              <div className="flex items-center gap-2.5 text-emerald-950">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <ShieldCheck size={16} />
+                </div>
+                <div>
+                  <span className="font-black text-emerald-900">Normal Contract Expenses:</span>{' '}
+                  <span className="text-slate-600 font-medium">For all regular construction expenses covered under the original contract/budget.</span>
                 </div>
               </div>
+              <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                Contract Budget
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs gap-3">
+              <div className="flex items-center gap-2.5 text-purple-950">
+                <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center shrink-0 shadow-2xs">
+                  <Zap size={16} />
+                </div>
+                <div>
+                  <span className="font-black text-purple-900">Additional Work Expenses:</span>{' '}
+                  <span className="text-slate-600 font-medium">Extra construction work requested by the client beyond the original contract.</span>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer font-bold text-purple-900 bg-white border border-purple-300 px-3.5 py-1.5 rounded-xl shrink-0 shadow-2xs hover:bg-purple-50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formData.additionalWorkClientApproved}
+                  onChange={(e) => setFormData({ ...formData, additionalWorkClientApproved: e.target.checked })}
+                  className="rounded text-purple-600 focus:ring-purple-500"
+                />
+                <span>Billable to Client (Approved Extra)</span>
+              </label>
+            </div>
+          )}
+
+              {/* Section 1: Expense Details */}
+              <div className="space-y-3">
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold ${
+                  mainTab === 'Additional Work'
+                    ? 'bg-purple-50 border border-purple-300 text-purple-800'
+                    : 'bg-emerald-50 border border-emerald-300 text-emerald-800'
+                }`}>
+                  <Layers size={13} />
+                  <span>{mainTab === 'Additional Work' ? 'Additional Expense Details' : 'Expense Details'}</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  {/* Category Dropdown (Materials, Labour, Rental, Other Expenses) */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                      Expense Category <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Layers size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                      <select
+                        value={formData.category === 'Additional Work' ? 'Materials' : formData.category}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
+                      >
+                        <option value="Materials">Materials</option>
+                        <option value="Labour">Labour</option>
+                        <option value="Rental">Rental</option>
+                        <option value="Other">Other Expenses</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    </div>
+                  </div>
 
               {/* Construction Site (Locked when accessed from Site Detail Page) */}
               <div>
@@ -554,9 +774,13 @@ export default function AddExpenseModal({
                 </label>
                 {lockedSite ? (
                   <div className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 shadow-2xs">
-                    <Building2 size={14} className="text-emerald-600 shrink-0" />
+                    <Building2 size={14} className={mainTab === 'Additional Work' ? 'text-purple-600 shrink-0' : 'text-emerald-600 shrink-0'} />
                     <span className="truncate">{lockedSite}</span>
-                    <span className="ml-auto text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    <span className={`ml-auto text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                      mainTab === 'Additional Work'
+                        ? 'bg-purple-100 text-purple-800 border-purple-300'
+                        : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    }`}>
                       Locked
                     </span>
                   </div>
@@ -579,14 +803,14 @@ export default function AddExpenseModal({
                       }}
                       className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
                     >
-                      {sitesList.length === 0 ? (
-                        <option value="">No sites available (Create a site first)</option>
-                      ) : (
+                      {Array.isArray(sitesList) && sitesList.length > 0 ? (
                         sitesList.map((s) => (
                           <option key={s._id || s.id} value={`${s.name} (${s.code})`}>
                             {s.name} ({s.code})
                           </option>
                         ))
+                      ) : (
+                        <option value="">No sites available (Create a site first)</option>
                       )}
                     </select>
                     <ChevronDown
@@ -830,7 +1054,8 @@ export default function AddExpenseModal({
                                   onChange={(e) =>
                                     handleRowChange(item.id, 'weight', e.target.value)
                                   }
-                                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                                  className="w-full px-2.5 py-1.5 bg-emerald-50/50 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-950 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                                  title="Auto-calculated from Length (ft). You can also edit manually."
                                 />
                               </td>
                               <td className="py-2.5 px-3">
@@ -1198,9 +1423,22 @@ export default function AddExpenseModal({
 
                 {/* Table Footer with Summary */}
                 <div className="px-4 py-3 bg-slate-100/90 border-t border-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <span className="text-slate-700 font-semibold">
-                    Total Items entered: <strong className="text-slate-900 font-extrabold">{materialItems.length}</strong>
-                  </span>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-slate-700 font-semibold">
+                      Total Items entered: <strong className="text-slate-900 font-extrabold">{materialItems.length}</strong>
+                    </span>
+                    {isSteelMaterial(formData.materialName) && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-900 font-bold text-xs border border-emerald-300">
+                        <span>Total Steel Weight:</span>
+                        <strong className="font-black">
+                          {materialItems
+                            .reduce((sum, it) => sum + (parseFloat(it.weight) || 0), 0)
+                            .toFixed(2)}{' '}
+                          Kg
+                        </strong>
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-700 font-bold">Table Total:</span>
                     <span className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-xs">
@@ -1212,6 +1450,20 @@ export default function AddExpenseModal({
                   </div>
                 </div>
               </div>
+
+              {/* Civil Engineering Formula Callout for Steel */}
+              {isSteelMaterial(formData.materialName) && (
+                <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-[11px] text-slate-600">
+                  <Info size={14} className="text-emerald-600 shrink-0" />
+                  <span>
+                    <strong>Auto-Calculation Formula:</strong> Weight is auto-calculated using civil engineering standard{' '}
+                    <code className="px-1.5 py-0.5 bg-white rounded border border-emerald-300 font-mono font-bold text-emerald-800">
+                      W = (D² × L) / 162.2
+                    </code>{' '}
+                    (e.g., 12 mm × 40 ft = <strong>10.83 kg</strong>, 16 mm × 40 ft = <strong>19.28 kg</strong>).
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1611,30 +1863,28 @@ export default function AddExpenseModal({
             </div>
           )}
 
-          {/* 4. ADDITIONAL WORK OR OTHER: Clean Work & Expense Details */}
-          {(formData.category === 'Additional Work' || formData.category === 'Other') && (
+          {/* 4. OTHER MISCELLANEOUS EXPENSES (Inside Expenses Tab) */}
+          {mainTab === 'Expenses' && formData.category === 'Other' && (
             <div className="space-y-3 pt-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-300 text-purple-800 text-xs font-extrabold">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-800 text-xs font-extrabold">
                 <FileEdit size={13} />
-                <span>
-                  {formData.category === 'Additional Work' ? 'Additional Site Work Details' : 'Miscellaneous Expense Details'}
-                </span>
+                <span>Miscellaneous Expense Details</span>
               </div>
 
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      {formData.category === 'Additional Work' ? 'Contractor / In-Charge' : 'Paid To / Vendor'}
+                      Paid To / Vendor
                     </label>
                     <div className="relative">
                       <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                       <input
                         type="text"
-                        placeholder="e.g. Service Provider / Contractor"
+                        placeholder="e.g. Service Provider / Vendor"
                         value={formData.supplier}
                         onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 shadow-2xs"
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-600 shadow-2xs"
                       />
                     </div>
                   </div>
@@ -1651,7 +1901,7 @@ export default function AddExpenseModal({
                         placeholder="0.00"
                         value={formData.customAmount}
                         onChange={(e) => setFormData({ ...formData, customAmount: e.target.value })}
-                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 shadow-2xs"
+                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-600 shadow-2xs"
                       />
                     </div>
                   </div>
@@ -1662,9 +1912,13 @@ export default function AddExpenseModal({
 
           {/* Section: Expense Calculation */}
           <div className="space-y-3 pt-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold ${
+              mainTab === 'Additional Work'
+                ? 'bg-purple-50 border border-purple-300 text-purple-800'
+                : 'bg-emerald-50 border border-emerald-300 text-emerald-800'
+            }`}>
               <Calculator size={13} />
-              <span>Expense Calculation</span>
+              <span>{mainTab === 'Additional Work' ? 'Additional Work Calculation' : 'Expense Calculation'}</span>
             </div>
 
             <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
@@ -1679,21 +1933,21 @@ export default function AddExpenseModal({
                     <div className="flex items-center justify-between text-slate-700">
                       <span className="font-bold">Material Cost</span>
                       <span className="font-extrabold text-slate-900">
-                        ₹ {materialCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ₹ {(Number(materialCost) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-700">
                       <span className="font-bold">Vehicle Rental</span>
                       <span className="font-extrabold text-slate-900">
-                        ₹ {vehicleRental.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ₹ {(Number(vehicleRental) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-700">
                       <span className="font-bold">Tips</span>
                       <span className="font-extrabold text-slate-900">
-                        ₹ {tips.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ₹ {(Number(tips) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </>
@@ -1711,7 +1965,7 @@ export default function AddExpenseModal({
                     <div className="flex items-center justify-between text-slate-700">
                       <span className="font-bold">Daily Wage Rate</span>
                       <span className="font-extrabold text-slate-900">
-                        ₹ {parseFloat(formData.labourDailyWage || 0).toLocaleString('en-IN')} / worker
+                        ₹ {(parseFloat(formData.labourDailyWage) || 0).toLocaleString('en-IN')} / worker
                       </span>
                     </div>
                   </>
@@ -1729,7 +1983,7 @@ export default function AddExpenseModal({
                     <div className="flex items-center justify-between text-slate-700">
                       <span className="font-bold">Rental Rate</span>
                       <span className="font-extrabold text-slate-900">
-                        ₹ {parseFloat(formData.rentalRate || 0).toLocaleString('en-IN')} per {formData.rentalUnit || 'Day'}
+                        ₹ {(parseFloat(formData.rentalRate) || 0).toLocaleString('en-IN')} per {formData.rentalUnit || 'Day'}
                       </span>
                     </div>
                   </>
@@ -1746,11 +2000,21 @@ export default function AddExpenseModal({
               </div>
 
               {/* Total Expense Amount Prominent Highlight */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-between px-4 py-3.5 rounded-xl bg-emerald-50 border-2 border-emerald-300">
+              <div className={`pt-3 border-t border-slate-200 flex items-center justify-between px-4 py-3.5 rounded-xl border-2 ${
+                mainTab === 'Additional Work'
+                  ? 'bg-purple-50 border-purple-300'
+                  : 'bg-emerald-50 border-emerald-300'
+              }`}>
                 <div>
-                  <div className="text-xs font-black text-emerald-950">Total Expense Amount</div>
-                  <div className="text-[11px] text-emerald-800 font-semibold">
-                    {formData.category === 'Materials'
+                  <div className={`text-xs font-black ${mainTab === 'Additional Work' ? 'text-purple-950' : 'text-emerald-950'}`}>
+                    {mainTab === 'Additional Work' ? 'Total Additional Work Amount' : 'Total Expense Amount'}
+                  </div>
+                  <div className={`text-[11px] font-semibold ${mainTab === 'Additional Work' ? 'text-purple-800' : 'text-emerald-800'}`}>
+                    {mainTab === 'Additional Work'
+                      ? (formData.addlPricingMode === 'metering'
+                          ? `Metered Area: ${formData.additionalWorkQty || 1} ${formData.additionalWorkUnit || 'Sq.Ft'} × ₹${formData.additionalWorkRate || 0}`
+                          : 'Materials + Labour + Machinery Deployment')
+                      : formData.category === 'Materials'
                       ? 'Material Cost + Vehicle Rental + Tips'
                       : formData.category === 'Labour'
                       ? 'Daily Wages × Workers × Days'
@@ -1759,8 +2023,8 @@ export default function AddExpenseModal({
                       : 'Recorded Expense Amount'}
                   </div>
                 </div>
-                <span className="text-xl font-black text-emerald-950 tracking-tight">
-                  ₹ {totalExpenseAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <span className={`text-xl font-black tracking-tight ${mainTab === 'Additional Work' ? 'text-purple-950' : 'text-emerald-950'}`}>
+                  ₹ {(Number(totalExpenseAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 
@@ -1789,7 +2053,11 @@ export default function AddExpenseModal({
 
           {/* Section 3: Payment Information */}
           <div className="space-y-3 pt-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-extrabold">
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold ${
+              mainTab === 'Additional Work'
+                ? 'bg-purple-50 border border-purple-300 text-purple-800'
+                : 'bg-emerald-50 border border-emerald-300 text-emerald-800'
+            }`}>
               <CreditCard size={13} />
               <span>Payment Information</span>
             </div>
@@ -1965,10 +2233,14 @@ export default function AddExpenseModal({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-[#008744] hover:bg-[#00743a] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
+              className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer ${
+                mainTab === 'Additional Work'
+                  ? 'bg-purple-700 hover:bg-purple-800 shadow-purple-700/20'
+                  : 'bg-[#008744] hover:bg-[#00743a] shadow-emerald-700/20'
+              }`}
             >
               <Plus size={15} />
-              <span>Add Expense</span>
+              <span>{mainTab === 'Additional Work' ? 'Add Additional Work Expense' : 'Add Expense'}</span>
             </button>
           </div>
         </form>

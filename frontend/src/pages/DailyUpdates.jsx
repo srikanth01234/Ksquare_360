@@ -95,14 +95,27 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
 
   const handleAddUpdate = async (updateData) => {
     try {
-      const targetSiteId = updateData.siteId || (activeSite ? (activeSite._id || activeSite.id) : null);
+      const targetSite =
+        sitesDirectory.find(
+          (s) =>
+            (updateData.siteId && (s._id === updateData.siteId || s.id === updateData.siteId)) ||
+            s.name === updateData.siteName ||
+            s.code === updateData.siteCode ||
+            (activeSite && (s._id === activeSite._id || s.id === activeSite.id))
+        ) || activeSite || sitesDirectory[0];
+
+      const targetSiteId = updateData.siteId || (targetSite ? (targetSite._id || targetSite.id) : null);
       if (targetSiteId) {
         await dailyUpdateApi.create({
           siteId: targetSiteId,
+          site: targetSiteId,
+          siteName: targetSite?.name || updateData.siteName,
+          siteCode: targetSite?.code || updateData.siteCode,
           title: updateData.title || updateData.activity || 'Daily Progress',
           description: updateData.description,
           workPhase: updateData.workPhase || 'General Construction',
           workersCount: updateData.workersCount || updateData.labourCount || 0,
+          materialsUsed: updateData.materialsUsed || '',
           notes: updateData.notes || '',
           date: updateData.date,
         });
@@ -221,6 +234,8 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   const siteActivities = activeSite
     ? updates.filter((u) => {
         const belongsToSite =
+          (activeSite._id && (u.siteId === activeSite._id || u.site?._id === activeSite._id || u.site === activeSite._id)) ||
+          (activeSite.id && u.siteId === activeSite.id) ||
           u.siteName === activeSite.name ||
           u.siteCode === activeSite.shortCode ||
           u.siteCode === activeSite.code;
@@ -503,13 +518,6 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
             {/* Action Buttons */}
             <div className="flex items-center gap-3 self-stretch sm:self-auto justify-end">
               <button
-                onClick={() => setIsUpdateModalOpen(true)}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl px-4 py-2.5 text-xs font-bold shadow-2xs transition-all cursor-pointer whitespace-nowrap"
-              >
-                <Plus size={15} className="text-emerald-600" />
-                <span>+ Log Update</span>
-              </button>
-              <button
                 onClick={() => setIsExpenseModalOpen(true)}
                 className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/20 transition-all cursor-pointer whitespace-nowrap"
               >
@@ -738,7 +746,7 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
         onAddExpense={handleAddExpenseFromModal}
         lockedSite={
           activeSite
-            ? `${activeSite.name} (${activeSite.shortCode || activeSite.code})`
+            ? `${activeSite.name} (${activeSite.code || activeSite.shortCode})`
             : null
         }
       />
@@ -750,7 +758,7 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
         onAddUpdate={handleAddUpdate}
         lockedSite={
           activeSite
-            ? `${activeSite.name} (${activeSite.shortCode || activeSite.code})`
+            ? `${activeSite.name} (${activeSite.code || activeSite.shortCode})`
             : null
         }
         sites={sitesDirectory}

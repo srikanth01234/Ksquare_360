@@ -6,11 +6,17 @@ const Site = require('../models/Site');
 // @access  Public
 exports.getExpenses = async (req, res, next) => {
   try {
-    const { siteId, category, paymentStatus, search, startDate, endDate, limit = 100 } = req.query;
+    const { siteId, category, expenseType, isAdditionalWork, paymentStatus, search, startDate, endDate, limit = 100 } = req.query;
     const filter = {};
 
     if (siteId && siteId !== 'All Sites') {
       filter.site = siteId;
+    }
+
+    if (expenseType) {
+      filter.expenseType = expenseType;
+    } else if (isAdditionalWork !== undefined) {
+      filter.isAdditionalWork = isAdditionalWork === 'true' || isAdditionalWork === true;
     }
 
     if (category && category !== 'All Expenses' && category !== 'All Categories') {
@@ -201,11 +207,19 @@ exports.createExpense = async (req, res, next) => {
       receiptUrl = req.body.receiptUrl;
     }
 
+    const isAddl = category === 'Additional Work' || req.body.isAdditionalWork === true || req.body.expenseType === 'ADDITIONAL_WORK';
+    const finalExpenseType = isAddl ? 'ADDITIONAL_WORK' : 'NORMAL';
+    const finalBillable = Boolean(req.body.billableToClient ?? req.body.additionalWorkClientApproved ?? isAddl);
+
     const newExpense = await Expense.create({
       site: site._id,
       siteName: site.name,
       siteCode: site.code,
       category,
+      subCategory: req.body.subCategory || '',
+      expenseType: finalExpenseType,
+      isAdditionalWork: isAddl,
+      billableToClient: finalBillable,
       description,
       supplierName: supplierName || '-',
       amount: totalAmt,

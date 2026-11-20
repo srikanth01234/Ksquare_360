@@ -35,6 +35,7 @@ import {
 import { siteApi, expenseApi, dailyUpdateApi, invoiceApi, paymentApi } from '../services/api';
 import AddExpenseModal from '../components/AddExpenseModal';
 import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
+import AddSiteModal from '../components/AddSiteModal';
 
 export default function SiteDetails({ site = null, onBack = () => {} }) {
   const [activeTab, setActiveTab] = useState('Overview');
@@ -59,11 +60,13 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   // Modals state
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isEditSiteModalOpen, setIsEditSiteModalOpen] = useState(false);
 
   // Live collections for this site
   const [siteExpenses, setSiteExpenses] = useState([]);
   const [siteUpdates, setSiteUpdates] = useState([]);
   const [siteInvoices, setSiteInvoices] = useState([]);
+  const [sitePayments, setSitePayments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch real financial figures & related data from backend
@@ -87,12 +90,13 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
       console.warn('Could not fetch site details from backend:', err.message);
     }
 
-    // Fetch live expenses, updates & invoices
+    // Fetch live expenses, updates, invoices & payments
     try {
-      const [expRes, updRes, invRes] = await Promise.allSettled([
+      const [expRes, updRes, invRes, payRes] = await Promise.allSettled([
         expenseApi.getAll(),
         dailyUpdateApi.getAll(),
         invoiceApi.getAll(),
+        paymentApi.getAll(),
       ]);
 
       if (expRes.status === 'fulfilled') {
@@ -126,22 +130,60 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         });
         setSiteInvoices(filtered);
       }
+
+      if (payRes.status === 'fulfilled') {
+        const allPay = payRes.value?.data || payRes.value || [];
+        const filtered = allPay.filter((p) => {
+          const matchId = sId && (p.siteId === sId || p.site?._id === sId || p.site === sId);
+          const matchName = sName && (p.siteName === sName || p.site?.name === sName);
+          const matchCode = sCode && (p.siteCode === sCode || p.site?.code === sCode);
+          return matchId || matchName || matchCode;
+        });
+        setSitePayments(filtered);
+      }
     } catch (err) {
       console.warn('Could not load site relation records:', err.message);
     }
   };
 
-  // Financial calculations
-  const materialsExpense = currentSite.financials?.materialsExpense ?? currentSite.materialsExpense ?? 0;
-  const labourExpense = currentSite.financials?.labourExpense ?? currentSite.labourExpense ?? 0;
-  const rentalExpense = currentSite.financials?.rentalExpense ?? currentSite.rentalExpense ?? 0;
-  const additionalWorkExpense = currentSite.financials?.additionalWorkExpense ?? currentSite.additionalWorkExpense ?? 0;
-  const totalExpenses = currentSite.financials?.totalExpenses ?? (materialsExpense + labourExpense + rentalExpense + additionalWorkExpense);
+  // Live dynamic financial calculations from real records
+  const isAddlWork = (e) => Boolean(e.isAdditionalWork || e.expenseType === 'ADDITIONAL_WORK' || e.category === 'Additional Work');
 
-  const clientPaid = currentSite.financials?.clientPaid ?? currentSite.clientPaid ?? 0;
-  const excessAmount = currentSite.financials?.excessAmount ?? (clientPaid - totalExpenses);
+  const dynamicMaterials = siteExpenses
+    .filter((e) => e.category === 'Materials' && !isAddlWork(e))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const dynamicLabour = siteExpenses
+    .filter((e) => e.category === 'Labour' && !isAddlWork(e))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const dynamicRental = siteExpenses
+    .filter((e) => (e.category === 'Rental' || e.category === 'Rent' || e.category === 'Vehicle Rent') && !isAddlWork(e))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const dynamicOther = siteExpenses
+    .filter((e) => e.category === 'Other' && !isAddlWork(e))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const dynamicNormalExpenses = dynamicMaterials + dynamicLabour + dynamicRental + dynamicOther;
+  const dynamicAddl = siteExpenses
+    .filter((e) => isAddlWork(e))
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const dynamicTotalExpenses = dynamicNormalExpenses + dynamicAddl;
+
+  // Fallback to currentSite document financials if expenses haven't been loaded
+  const materialsExpense = siteExpenses.length > 0 ? dynamicMaterials : (currentSite.financials?.materialsExpense ?? currentSite.materialsExpense ?? 0);
+  const labourExpense = siteExpenses.length > 0 ? dynamicLabour : (currentSite.financials?.labourExpense ?? currentSite.labourExpense ?? 0);
+  const rentalExpense = siteExpenses.length > 0 ? dynamicRental : (currentSite.financials?.rentalExpense ?? currentSite.rentalExpense ?? 0);
+  const additionalWorkExpense = siteExpenses.length > 0 ? dynamicAddl : (currentSite.financials?.additionalWorkExpense ?? currentSite.additionalWorkExpense ?? 0);
+  const normalContractExpenses = siteExpenses.length > 0 ? dynamicNormalExpenses : (currentSite.financials?.normalContractExpenses ?? (materialsExpense + labourExpense + rentalExpense));
+  const totalExpenses = siteExpenses.length > 0 ? dynamicTotalExpenses : (currentSite.financials?.totalExpenses ?? (normalContractExpenses + additionalWorkExpense));
+
+  // Dynamic Client Received Payments
+  const dynamicClientPaid = sitePayments
+    .filter((p) => p.flowType === 'RECEIVED' || p.flowType === 'INCOMING' || p.type === 'Receipt')
+    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+  const clientPaid = dynamicClientPaid > 0 ? dynamicClientPaid : (currentSite.financials?.clientPaid ?? currentSite.clientPaid ?? 0);
+  const excessAmount = clientPaid - totalExpenses;
   const projectBudget = currentSite.projectBudget ?? currentSite.financials?.projectBudget ?? 0;
-  const clientPending = currentSite.financials?.clientPending ?? Math.max(0, projectBudget - clientPaid);
+  const clientPending = Math.max(0, projectBudget - clientPaid);
 
   const formatCurrency = (val) => '₹' + Number(val || 0).toLocaleString('en-IN');
   const formatDate = (val) => {
@@ -157,7 +199,8 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
     { id: 'Overview', label: 'Overview', icon: Home },
     { id: 'Materials', label: 'Materials', icon: Layers, count: siteExpenses.filter(e => e.category === 'Materials').length },
     { id: 'Labour', label: 'Labour', icon: Users, count: siteExpenses.filter(e => e.category === 'Labour').length },
-    { id: 'Expenses', label: 'Expenses', icon: Wallet, count: siteExpenses.length },
+    { id: 'Additional Work', label: 'Additional Work', icon: Zap, count: siteExpenses.filter(e => e.category === 'Additional Work').length },
+    { id: 'Expenses', label: 'All Expenses', icon: Wallet, count: siteExpenses.length },
     { id: 'Daily Updates', label: 'Daily Updates', icon: CalendarDays, count: siteUpdates.length },
     { id: 'Billing', label: 'Billing', icon: FileSpreadsheet, count: siteInvoices.length },
   ];
@@ -191,6 +234,10 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         siteName: currentSite.name,
         siteCode: currentSite.code,
         category: newExp.category,
+        subCategory: newExp.subCategory || '',
+        expenseType: newExp.expenseType || (newExp.isAdditionalWork || newExp.category === 'Additional Work' ? 'ADDITIONAL_WORK' : 'NORMAL'),
+        isAdditionalWork: Boolean(newExp.isAdditionalWork || newExp.category === 'Additional Work'),
+        billableToClient: Boolean(newExp.billableToClient),
         description: newExp.description,
         supplierName: newExp.supplierName || newExp.supplier || '-',
         amount: rawAmt,
@@ -258,6 +305,23 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
       await loadAllSiteData();
     } catch (err) {
       console.warn('Error clearing payment:', err.message);
+    }
+  };
+
+  const handleUpdateSite = async (id, updatedSiteData) => {
+    try {
+      const res = await siteApi.update(id, updatedSiteData);
+      if (res?.data) {
+        setCurrentSite(res.data);
+      } else {
+        setCurrentSite((prev) => ({ ...prev, ...updatedSiteData }));
+      }
+      setIsEditSiteModalOpen(false);
+      await loadAllSiteData();
+    } catch (err) {
+      console.warn('Could not update site:', err.message);
+      setCurrentSite((prev) => ({ ...prev, ...updatedSiteData }));
+      setIsEditSiteModalOpen(false);
     }
   };
 
@@ -395,6 +459,14 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         {/* Right Actions & Site Photo */}
         <div className="flex flex-col justify-between items-end gap-3 shrink-0">
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setIsEditSiteModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold shadow-2xs transition-all cursor-pointer"
+              title="Edit Site Details"
+            >
+              <Edit size={14} className="text-amber-600" />
+              <span>Edit Site</span>
+            </button>
             <button
               onClick={() => setIsUpdateModalOpen(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold shadow-2xs transition-all cursor-pointer"
@@ -746,9 +818,19 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
           {/* Right Sidebar: Site Information Card (4 cols) */}
           <div className="lg:col-span-4">
             <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-sm space-y-4 sticky top-20">
-              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm pb-3 border-b border-slate-100">
-                <Info size={16} className="text-emerald-600" />
-                <span>Site Information</span>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                  <Info size={16} className="text-emerald-600" />
+                  <span>Site Information</span>
+                </div>
+                <button
+                  onClick={() => setIsEditSiteModalOpen(true)}
+                  className="text-xs font-bold text-amber-600 hover:text-amber-700 flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Edit Site Details"
+                >
+                  <Edit size={13} />
+                  <span>Edit</span>
+                </button>
               </div>
 
               <div className="space-y-3.5 text-xs">
@@ -827,17 +909,17 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         </div>
       )}
 
-      {/* TAB 2, 3, 4: EXPENSES (ALL OR BY CATEGORY) */}
-      {(activeTab === 'Expenses' || activeTab === 'Materials' || activeTab === 'Labour') && (
+      {/* TAB 2, 3, 4: EXPENSES (ALL OR BY CATEGORY INCLUDING ADDITIONAL WORK) */}
+      {(activeTab === 'Expenses' || activeTab === 'All Expenses' || activeTab === 'Materials' || activeTab === 'Labour' || activeTab === 'Additional Work') && (
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden animate-in fade-in duration-200">
           <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-                {activeTab === 'Materials' ? <Layers size={18} /> : activeTab === 'Labour' ? <Users size={18} /> : <Wallet size={18} />}
+                {activeTab === 'Additional Work' ? <Zap size={18} className="text-purple-600" /> : activeTab === 'Materials' ? <Layers size={18} /> : activeTab === 'Labour' ? <Users size={18} /> : <Wallet size={18} />}
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-slate-900">
-                  {activeTab === 'Materials' ? 'Material Purchases' : activeTab === 'Labour' ? 'Labour & Wage Expenses' : 'All Recorded Site Expenses'}
+                  {activeTab === 'Additional Work' ? 'Additional Site Work & Metering' : activeTab === 'Materials' ? 'Material Purchases' : activeTab === 'Labour' ? 'Labour & Wage Expenses' : 'All Recorded Site Expenses'}
                 </h3>
                 <p className="text-xs text-slate-500">Live ledger entries for {currentSite.name}</p>
               </div>
@@ -871,8 +953,8 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                   <th className="py-3.5 px-4 w-12 text-center">#</th>
                   <th className="py-3.5 px-4">Date</th>
                   <th className="py-3.5 px-4">Category</th>
-                  <th className="py-3.5 px-4">Description</th>
-                  <th className="py-3.5 px-4">Supplier / Worker</th>
+                  <th className="py-3.5 px-4">Description / Details</th>
+                  <th className="py-3.5 px-4">Supplier / Contractor</th>
                   <th className="py-3.5 px-4 text-center">Qty / Unit</th>
                   <th className="py-3.5 px-4 text-right">Amount (₹)</th>
                   <th className="py-3.5 px-4 text-center">Status</th>
@@ -880,17 +962,32 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {siteExpenses
-                  .filter((e) => {
-                    if (activeTab === 'Materials') return e.category === 'Materials';
-                    if (activeTab === 'Labour') return e.category === 'Labour';
-                    return true;
-                  })
-                  .filter((e) =>
-                    String(e.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                    String(e.supplierName || e.supplier || '').toLowerCase().includes(searchQuery.toLowerCase())
-                  )
-                  .map((e, idx) => (
+                {(() => {
+                  const filteredExp = siteExpenses
+                    .filter((e) => {
+                      if (activeTab === 'Materials') return e.category === 'Materials';
+                      if (activeTab === 'Labour') return e.category === 'Labour';
+                      if (activeTab === 'Additional Work') return e.category === 'Additional Work';
+                      return true;
+                    })
+                    .filter((e) =>
+                      String(e.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      String(e.supplierName || e.supplier || '').toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+
+                  if (filteredExp.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan="9" className="py-12 text-center text-slate-400">
+                          <Wallet size={28} className="mx-auto mb-2 text-slate-300 opacity-60" />
+                          <div className="font-bold text-slate-700">No {activeTab.toLowerCase()} expenses found.</div>
+                          <div className="text-xs text-slate-400 mt-1">Click "+ Add Expense" above to add your first record.</div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredExp.map((e, idx) => (
                     <tr key={e._id || e.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-3.5 px-4 text-center text-slate-400 font-medium">{idx + 1}</td>
                       <td className="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">{formatDate(e.date)}</td>
@@ -907,7 +1004,24 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                           {e.category}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-900">{e.description}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900">{e.description}</div>
+                        {e.items && e.items.length > 0 && (
+                          <div className="text-[11px] text-emerald-700 font-medium mt-1 flex flex-wrap gap-1">
+                            <span className="font-semibold text-slate-500">Materials:</span>
+                            {e.items.map((it, i) => (
+                              <span key={i} className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded text-[10px]">
+                                {it.materialName} ({it.quantity} {it.unit})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {e.notes && (
+                          <div className="text-[10px] text-purple-700 bg-purple-50/70 border border-purple-100 rounded px-1.5 py-0.5 mt-1 line-clamp-1">
+                            {e.notes}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 text-slate-600 font-medium">{e.supplierName || e.supplier || '-'}</td>
                       <td className="py-3.5 px-4 text-center text-slate-600 font-medium">
                         {e.quantity ? `${e.quantity} ${e.unit || ''}` : '-'}
@@ -944,7 +1058,8 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -1082,6 +1197,14 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
         onAddUpdate={handleAddUpdate}
         lockedSite={`${currentSite.name} (${currentSite.code})`}
         sites={[currentSite]}
+      />
+
+      {/* Edit Site Modal */}
+      <AddSiteModal
+        isOpen={isEditSiteModalOpen}
+        siteToEdit={currentSite}
+        onClose={() => setIsEditSiteModalOpen(false)}
+        onUpdateSite={handleUpdateSite}
       />
     </div>
   );

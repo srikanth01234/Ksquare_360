@@ -247,13 +247,29 @@ exports.updatePayment = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Payment record not found' });
     }
 
-    const { status, referenceNo, paymentMode, notes, amount } = req.body;
+    const {
+      status,
+      referenceNo,
+      paymentMode,
+      notes,
+      amount,
+      partyName,
+      category,
+      invoiceRef,
+      date,
+      receiptUrl,
+    } = req.body;
 
+    if (partyName) payment.partyName = partyName;
+    if (category) payment.category = category;
     if (status) payment.status = status;
-    if (referenceNo) payment.referenceNo = referenceNo;
+    if (referenceNo !== undefined) payment.referenceNo = referenceNo;
     if (paymentMode) payment.paymentMode = paymentMode;
+    if (invoiceRef !== undefined) payment.invoiceRef = invoiceRef;
+    if (date) payment.date = new Date(date);
     if (notes !== undefined) payment.notes = notes;
     if (amount !== undefined) payment.amount = parseFloat(amount);
+    if (receiptUrl !== undefined) payment.receiptUrl = receiptUrl;
 
     if (req.file) {
       payment.receiptUrl = `/uploads/receipts/${req.file.filename}`;

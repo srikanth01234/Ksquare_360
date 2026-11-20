@@ -166,12 +166,13 @@ export default function App() {
                   sharedExpenses={expenses}
                   onSelectSiteExpense={(exp) =>
                     setSelectedSiteExpense({
-                      name: exp.siteName,
-                      code: exp.siteCode,
-                      location: 'Chennai, TN',
-                      client: 'Arun Kumar',
-                      startDate: '12 Jan 2026',
-                      status: 'Active',
+                      _id: exp.siteId || (exp.site && exp.site._id) || (typeof exp.site === 'string' ? exp.site : null),
+                      name: exp.siteName || exp.name,
+                      code: exp.siteCode || exp.code,
+                      location: exp.location || 'Chennai, TN',
+                      client: exp.client || 'Client',
+                      startDate: exp.startDate || 'Recent',
+                      status: exp.status || 'Active',
                     })
                   }
                 />

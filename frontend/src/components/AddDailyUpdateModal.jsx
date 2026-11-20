@@ -52,8 +52,6 @@ export default function AddDailyUpdateModal({
     { id: 2, material: 'Cement', quantity: '10', unit: 'Bags' },
   ]);
 
-  if (!isOpen) return null;
-
   const toggleLabourType = (workerType) => {
     if (selectedLabourTypes.includes(workerType)) {
       setSelectedLabourTypes(selectedLabourTypes.filter((t) => t !== workerType));
@@ -83,11 +81,16 @@ export default function AddDailyUpdateModal({
     e.preventDefault();
     if (!formData.description) return;
 
-    const matchingSite = sites.find((s) => `${s.name} (${s.code})` === formData.site || s.name === formData.site);
+    const matchingSite = sites.find(
+      (s) =>
+        `${s.name} (${s.code})` === formData.site ||
+        s.name === formData.site ||
+        (s.code && formData.site.includes(s.code))
+    );
     const siteParts = formData.site.split(' (');
     const siteName = matchingSite ? matchingSite.name : siteParts[0] || 'Site';
     const siteCode = matchingSite ? matchingSite.code : siteParts[1] ? siteParts[1].replace(')', '') : '';
-    const siteId = matchingSite ? (matchingSite._id || matchingSite.id) : null;
+    const siteId = matchingSite ? (matchingSite._id || matchingSite.id) : (sites[0]?._id || sites[0]?.id || null);
 
     const materialsSummary = materials
       .filter((m) => m.material)

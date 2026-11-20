@@ -21,20 +21,21 @@ async function computeSiteFinancials(siteId, projectBudget = 0) {
     const amt = exp.amount || 0;
     const cat = exp.category || 'Other';
 
-    if (cat === 'Materials') {
+    if (exp.isAdditionalWork || exp.expenseType === 'ADDITIONAL_WORK' || cat === 'Additional Work') {
+      additionalWorkExpense += amt;
+    } else if (cat === 'Materials') {
       materialsExpense += amt;
     } else if (cat === 'Labour') {
       labourExpense += amt;
     } else if (cat === 'Rental' || cat === 'Vehicle Rent' || cat === 'Rent') {
       rentalExpense += amt;
-    } else if (cat === 'Additional Work') {
-      additionalWorkExpense += amt;
     } else {
       otherExpense += amt;
     }
   });
 
-  const totalExpenses = materialsExpense + labourExpense + rentalExpense + additionalWorkExpense + otherExpense;
+  const normalContractExpenses = materialsExpense + labourExpense + rentalExpense + otherExpense;
+  const totalExpenses = normalContractExpenses + additionalWorkExpense;
 
   // 2. Aggregate Client Payments (FlowType = RECEIVED)
   const clientPayments = await Payment.find({
@@ -57,6 +58,7 @@ async function computeSiteFinancials(siteId, projectBudget = 0) {
   const budgetSpentPct = projectBudget > 0 ? Math.min(100, Math.round((totalExpenses / projectBudget) * 100)) : 0;
 
   return {
+    normalContractExpenses,
     materialsExpense,
     labourExpense,
     rentalExpense,

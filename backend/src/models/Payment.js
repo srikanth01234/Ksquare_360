@@ -42,12 +42,11 @@ const paymentSchema = new mongoose.Schema(
     },
     paymentMode: {
       type: String,
-      enum: ['Bank Transfer (NEFT)', 'Bank Transfer (RTGS)', 'UPI (GPay)', 'UPI (PhonePe)', 'Cheque', 'Cash'],
       default: 'Bank Transfer (NEFT)',
     },
     referenceNo: {
       type: String,
-      required: true,
+      default: '',
       trim: true,
     },
     invoiceRef: {
@@ -56,7 +55,6 @@ const paymentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['Cleared', 'Pending', 'Paid'],
       default: 'Cleared',
     },
     date: {

@@ -36,6 +36,8 @@ export default function Godown({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
   // Modals state
   const [isInwardModalOpen, setIsInwardModalOpen] = useState(false);
@@ -198,6 +200,17 @@ export default function Godown({
     });
   }, [inventory, searchQuery, selectedCategory, selectedStatus]);
 
+  // Reset pagination on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedStatus]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
+  const paginatedInventory = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredInventory.slice(start, start + itemsPerPage);
+  }, [filteredInventory, currentPage, itemsPerPage]);
+
   // Save Inward Stock (Updates Master Material Stock & Logs Movement)
   const handleSaveInward = async (inwardData) => {
     const existing = rawMaterials.find(
@@ -303,7 +316,13 @@ export default function Godown({
 
     const issueQty = parseFloat(issueData.quantity) || 0;
     const materialId = existing?._id || existing?.id;
-    const targetSite = sites.find((s) => s.code === issueData.siteCode || s.name === issueData.siteName) || sites[0];
+    const targetSite =
+      sites.find(
+        (s) =>
+          (issueData.siteId && s._id === issueData.siteId) ||
+          s.code === issueData.siteCode ||
+          s.name === issueData.siteName
+      ) || sites[0];
 
     try {
       if (materialId && !String(materialId).startsWith('MAT-') && targetSite?._id) {
@@ -803,8 +822,9 @@ export default function Godown({
                       </td>
                     </tr>
                   ) : (
-                    filteredInventory.map((item, idx) => {
+                    paginatedInventory.map((item, idx) => {
                       const status = getStockStatus(item.availableQuantity, item.minStockLevel);
+                      const rowNum = (currentPage - 1) * itemsPerPage + idx + 1;
                       return (
                         <tr
                           key={item.id}
@@ -812,7 +832,7 @@ export default function Godown({
                         >
                           {/* Row Number */}
                           <td className="py-3.5 px-4 text-center text-slate-500 font-bold">
-                            {idx + 1}
+                            {rowNum}
                           </td>
 
                           {/* Material Name with Photo */}
@@ -935,19 +955,46 @@ export default function Godown({
               </table>
             </div>
 
-            {/* Table Footer */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50/50 text-xs text-slate-600 font-medium">
+            {/* Table Footer with Working Pagination */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50/50 text-xs text-slate-600 font-medium">
               <span>
-                Showing {filteredInventory.length} of {inventory.length} materials in godown
+                Showing {filteredInventory.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to{' '}
+                {Math.min(currentPage * itemsPerPage, filteredInventory.length)} of {filteredInventory.length} materials in godown
               </span>
               <div className="flex items-center gap-1.5">
-                <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-white cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-white disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors shadow-2xs"
+                  title="Previous Page"
+                >
                   <ChevronLeft size={14} />
                 </button>
-                <button className="w-8 h-8 rounded-lg bg-[#008744] text-white font-bold text-xs shadow-xs">
-                  1
-                </button>
-                <button className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:bg-white cursor-pointer">
+                {Array.from({ length: totalPages }).map((_, i) => {
+                  const pageNum = i + 1;
+                  return (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8 h-8 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                        currentPage === pageNum
+                          ? 'bg-[#008744] text-white shadow-xs'
+                          : 'border border-slate-200 text-slate-700 hover:bg-white'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-white disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition-colors shadow-2xs"
+                  title="Next Page"
+                >
                   <ChevronRight size={14} />
                 </button>
               </div>
@@ -989,7 +1036,20 @@ export default function Godown({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {recentMovements.map((mov, idx) => (
+                {recentMovements.length === 0 ? (
+                  <tr>
+                    <td colSpan="8" className="py-12 text-center text-slate-400">
+                      <History size={32} className="mx-auto mb-2 text-slate-300" />
+                      <div className="font-bold text-slate-700 text-sm">
+                        No stock movements recorded yet
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        Inward deliveries and site dispatches will appear here.
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  recentMovements.map((mov, idx) => (
                   <tr key={mov.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 px-4 text-center text-slate-500 font-bold">
                       {idx + 1}
@@ -1035,7 +1095,7 @@ export default function Godown({
                       {mov.remarks}
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>

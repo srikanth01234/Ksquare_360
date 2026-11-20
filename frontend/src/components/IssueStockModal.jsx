@@ -46,12 +46,13 @@ export default function IssueStockModal({
       } else if (materials.length > 0 && !selectedMaterialName) {
         setSelectedMaterialName(materials[0].name);
       }
+      if (sites.length > 0 && (!siteCode || !sites.some((s) => s.code === siteCode || s._id === siteCode))) {
+        setSiteCode(sites[0].code || sites[0]._id || 'KS-001');
+      }
       setErrorMsg('');
       setQuantity('');
     }
-  }, [materials, isOpen, initialMaterial]);
-
-  if (!isOpen) return null;
+  }, [materials, isOpen, initialMaterial, sites]);
 
   const availableStock = currentMaterial ? currentMaterial.availableQuantity : 0;
   const unit = currentMaterial ? currentMaterial.unit : 'Units';
@@ -91,17 +92,20 @@ export default function IssueStockModal({
       return;
     }
 
-    const selectedSite = sites.find((s) => s.code === siteCode) || sites[0];
+    const selectedSite =
+      sites.find((s) => s.code === siteCode || s._id === siteCode) ||
+      sites[0] || { name: 'Main Site', code: 'KS-001' };
 
     onIssueStock({
-      materialId: currentMaterial.id,
+      materialId: currentMaterial.id || currentMaterial._id,
       materialName: currentMaterial.name,
       category: currentMaterial.category,
       quantity: qty,
       unit: unit,
+      siteId: selectedSite._id,
       siteName: selectedSite.name,
-      siteCode: selectedSite.code,
-      projectLabel: `${selectedSite.name} (${selectedSite.code})`,
+      siteCode: selectedSite.code || '',
+      projectLabel: `${selectedSite.name} (${selectedSite.code || ''})`,
       date: issueDate,
       issuedTo: issuedTo || 'Site Incharge',
       remarks: remarks || `Dispatched to ${selectedSite.name}`,
