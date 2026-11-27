@@ -1,5 +1,6 @@
 const Expense = require('../models/Expense');
 const Site = require('../models/Site');
+const Payment = require('../models/Payment');
 
 // @desc    Get all expenses with comprehensive filters
 // @route   GET /api/expenses
@@ -88,8 +89,16 @@ exports.getExpenseSummary = async (req, res, next) => {
     expenses.forEach((exp) => {
       const amt = exp.amount || 0;
       totalExpenses += amt;
-      paidAmount += exp.paidAmount || (exp.paymentStatus === 'Paid' ? amt : 0);
-      pendingAmount += exp.pendingAmount || (exp.paymentStatus === 'Pending' ? amt : 0);
+      if (exp.paymentStatus === 'Paid') {
+        paidAmount += exp.paidAmount !== undefined && exp.paidAmount > 0 ? exp.paidAmount : amt;
+      } else if (exp.paymentStatus === 'Partial') {
+        const paid = exp.paidAmount || 0;
+        const pend = exp.pendingAmount !== undefined ? exp.pendingAmount : Math.max(0, amt - paid);
+        paidAmount += paid;
+        pendingAmount += pend;
+      } else {
+        pendingAmount += exp.pendingAmount !== undefined && exp.pendingAmount > 0 ? exp.pendingAmount : amt;
+      }
 
       const cat = exp.category;
       if (cat === 'Materials') materialExpenses += amt;
@@ -170,9 +179,17 @@ exports.createExpense = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Site not found' });
     }
 
-    const totalAmt = parseFloat(amount) || 0;
+    const billingNum = req.body.billingAmount !== undefined && req.body.billingAmount !== null && req.body.billingAmount !== ''
+      ? parseFloat(req.body.billingAmount)
+      : null;
+    const calcNum = req.body.calculatedAmount !== undefined && req.body.calculatedAmount !== null && req.body.calculatedAmount !== ''
+      ? parseFloat(req.body.calculatedAmount)
+      : (parseFloat(amount) || 0);
+    const totalAmt = billingNum !== null && billingNum > 0 ? billingNum : (parseFloat(amount) || 0);
+
     let finalPaid = 0;
     let finalPending = 0;
+    let finalPaymentMode = paymentMode || 'Cash';
 
     if (paymentStatus === 'Paid') {
       finalPaid = totalAmt;
@@ -180,6 +197,16 @@ exports.createExpense = async (req, res, next) => {
     } else if (paymentStatus === 'Pending') {
       finalPaid = 0;
       finalPending = totalAmt;
+      finalPaymentMode = '';
+    } else if (paymentStatus === 'Partial') {
+      finalPaid = parseFloat(paidAmount) || 0;
+      if (finalPaid <= 0 || finalPaid >= totalAmt) {
+        return res.status(400).json({
+          success: false,
+          message: `Partial paid amount must be greater than 0 and less than total billing amount (₹${totalAmt}).`,
+        });
+      }
+      finalPending = Math.max(0, totalAmt - finalPaid);
     } else {
       finalPaid = parseFloat(paidAmount) || 0;
       finalPending = parseFloat(pendingAmount) || Math.max(0, totalAmt - finalPaid);
@@ -223,10 +250,13 @@ exports.createExpense = async (req, res, next) => {
       description,
       supplierName: supplierName || '-',
       amount: totalAmt,
+      calculatedAmount: calcNum,
+      billingAmount: billingNum,
+      labourDetails: req.body.labourDetails || null,
       paymentStatus,
       paidAmount: finalPaid,
       pendingAmount: finalPending,
-      paymentMode: paymentMode || 'Bank Transfer (NEFT)',
+      paymentMode: finalPaymentMode,
       referenceNo: referenceNo || `EXP-${Date.now().toString().slice(-6)}`,
       invoiceBillNo: invoiceBillNo || '',
       receiptUrl,
@@ -234,6 +264,33 @@ exports.createExpense = async (req, res, next) => {
       items: parsedItems,
       notes: notes || '',
     });
+
+    // Synchronize initial payment (Paid or Partial) with Payments ledger
+    if (finalPaid > 0) {
+      await Payment.create({
+        flowType: 'OUTGOING',
+        site: site._id,
+        siteName: site.name,
+        siteCode: site.code,
+        expense: newExpense._id,
+        partyName: supplierName && supplierName !== '-' ? supplierName : description,
+        category:
+          category === 'Materials'
+            ? 'Materials'
+            : category === 'Labour'
+            ? 'Labour Wages'
+            : category === 'Rental' || category === 'Vehicle Rent'
+            ? 'Machinery Rental'
+            : 'Other',
+        amount: finalPaid,
+        paymentMode: finalPaymentMode || 'Cash',
+        referenceNo: newExpense.referenceNo,
+        invoiceRef: invoiceBillNo || description,
+        status: 'Cleared',
+        date: date ? new Date(date) : new Date(),
+        notes: paymentStatus === 'Partial' ? `Initial partial payment for: ${description}` : `Full payment for: ${description}`,
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -268,11 +325,13 @@ exports.updateExpense = async (req, res, next) => {
       notes,
     } = req.body;
 
+    const prevPaid = Number(expense.paidAmount) || 0;
+
     if (category) expense.category = category;
     if (description) expense.description = description;
     if (supplierName !== undefined) expense.supplierName = supplierName;
     if (amount !== undefined) expense.amount = parseFloat(amount);
-    if (paymentMode) expense.paymentMode = paymentMode;
+    if (paymentMode !== undefined) expense.paymentMode = paymentMode;
     if (referenceNo) expense.referenceNo = referenceNo;
     if (notes !== undefined) expense.notes = notes;
 
@@ -284,9 +343,14 @@ exports.updateExpense = async (req, res, next) => {
       } else if (paymentStatus === 'Pending') {
         expense.paidAmount = 0;
         expense.pendingAmount = expense.amount;
+        expense.paymentMode = '';
       } else {
         if (paidAmount !== undefined) expense.paidAmount = parseFloat(paidAmount);
-        if (pendingAmount !== undefined) expense.pendingAmount = parseFloat(pendingAmount);
+        if (pendingAmount !== undefined) {
+          expense.pendingAmount = parseFloat(pendingAmount);
+        } else {
+          expense.pendingAmount = Math.max(0, expense.amount - (expense.paidAmount || 0));
+        }
       }
     }
 
@@ -295,6 +359,37 @@ exports.updateExpense = async (req, res, next) => {
     }
 
     await expense.save();
+
+    // Synchronize Payments ledger when expense payment status/amount changes via Edit
+    const newPaid = Number(expense.paidAmount) || 0;
+    if (newPaid === 0) {
+      await Payment.deleteMany({ expense: expense._id, flowType: 'OUTGOING' });
+    } else if (newPaid > prevPaid) {
+      const delta = newPaid - prevPaid;
+      await Payment.create({
+        flowType: 'OUTGOING',
+        site: expense.site,
+        siteName: expense.siteName,
+        siteCode: expense.siteCode,
+        expense: expense._id,
+        partyName: expense.supplierName && expense.supplierName !== '-' ? expense.supplierName : expense.description,
+        category:
+          expense.category === 'Materials'
+            ? 'Materials'
+            : expense.category === 'Labour'
+            ? 'Labour Wages'
+            : expense.category === 'Rental' || expense.category === 'Vehicle Rent'
+            ? 'Machinery Rental'
+            : 'Other',
+        amount: delta,
+        paymentMode: expense.paymentMode || 'Cash',
+        referenceNo: expense.referenceNo || `EXP-${Date.now().toString().slice(-6)}`,
+        invoiceRef: expense.invoiceBillNo || expense.description,
+        status: 'Cleared',
+        date: new Date(),
+        notes: `Updated expense payment for: ${expense.description}`,
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -316,6 +411,8 @@ exports.deleteExpense = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Expense record not found' });
     }
 
+    // Clean up any OUTGOING payment records linked to this deleted expense
+    await Payment.deleteMany({ expense: expense._id });
     await Expense.findByIdAndDelete(req.params.id);
 
     res.status(200).json({

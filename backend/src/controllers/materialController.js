@@ -88,12 +88,12 @@ exports.getMaterialById = async (req, res, next) => {
 // @access  Public
 exports.createMaterial = async (req, res, next) => {
   try {
-    const { name, category, unit, defaultPrice, status, imageUrl, initialStock, reorderLevel } = req.body;
+    const { name, category, unit, size, type, brand, description, defaultPrice, status, imageUrl, initialStock, reorderLevel } = req.body;
 
-    if (!name || !category || !unit || defaultPrice === undefined) {
+    if (!name || !category || !unit) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide material name, category, unit, and defaultPrice',
+        message: 'Please provide material name, category, and unit',
       });
     }
 
@@ -117,6 +117,10 @@ exports.createMaterial = async (req, res, next) => {
       name,
       category,
       unit,
+      size: size || '',
+      type: type || '',
+      brand: brand || '',
+      description: description || '',
       defaultPrice: parseFloat(defaultPrice) || 0,
       status: status || 'Active',
       imageUrl: imageUrl || '',
@@ -163,7 +167,7 @@ exports.createMaterial = async (req, res, next) => {
 // @access  Public
 exports.updateMaterial = async (req, res, next) => {
   try {
-    const { name, category, unit, defaultPrice, status, imageUrl, reorderLevel } = req.body;
+    const { name, category, unit, size, type, brand, description, defaultPrice, status, imageUrl, reorderLevel } = req.body;
 
     const material = await MaterialMaster.findById(req.params.id);
     if (!material) {
@@ -173,6 +177,10 @@ exports.updateMaterial = async (req, res, next) => {
     if (name) material.name = name;
     if (category) material.category = category;
     if (unit) material.unit = unit;
+    if (size !== undefined) material.size = size;
+    if (type !== undefined) material.type = type;
+    if (brand !== undefined) material.brand = brand;
+    if (description !== undefined) material.description = description;
     if (defaultPrice !== undefined) material.defaultPrice = parseFloat(defaultPrice);
     if (status) material.status = status;
     if (imageUrl !== undefined) material.imageUrl = imageUrl;

@@ -28,6 +28,7 @@ import {
 import AddExpenseModal from '../components/AddExpenseModal';
 import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
 import { siteApi, dailyUpdateApi, expenseApi } from '../services/api';
+import { buildExpensePayload } from '../utils/expensePayload';
 
 export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   // Navigation: null = All Sites Cards View; object = Dedicated Site Daily Updates Detail View
@@ -131,77 +132,55 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
 
   // Handle adding an expense recorded from the Site Detail page
   const handleAddExpenseFromModal = async (newExp) => {
-    const targetSite = activeSite || sitesDirectory.find((s) => s.name === newExp.siteName || s.code === newExp.siteCode);
-    const siteId = targetSite ? (targetSite._id || targetSite.id) : null;
+    const targetSite =
+      activeSite ||
+      sitesDirectory.find(
+        (s) =>
+          (newExp.siteId && (s._id === newExp.siteId || s.id === newExp.siteId)) ||
+          s.name === newExp.siteName ||
+          s.code === newExp.siteCode
+      );
+    const siteId = targetSite ? (targetSite._id || targetSite.id) : newExp.siteId;
     const targetSiteName = targetSite ? targetSite.name : newExp.siteName || 'Site';
-    const targetSiteCode = targetSite
-      ? targetSite.shortCode || targetSite.code
-      : newExp.siteCode || 'KS-001';
+    const targetSiteCode = targetSite ? targetSite.code || targetSite.shortCode || '' : newExp.siteCode || '';
 
-    try {
-      if (siteId) {
-        await expenseApi.create({
-          ...newExp,
-          site: siteId,
-          siteId,
-          siteName: targetSiteName,
-          siteCode: targetSiteCode,
-        });
-        await dailyUpdateApi.create({
-          siteId,
-          title: `${newExp.category} Expense: ${newExp.description}`,
-          description: `${newExp.description} (₹${newExp.amount}) - ${newExp.paymentStatus}`,
-          workPhase: newExp.category,
-          workersCount: newExp.category === 'Labour' ? Number(newExp.quantity) || 4 : 0,
-          date: newExp.date || new Date().toISOString(),
-        });
-        await loadSitesAndUpdates();
-        onExpenseAdded({
-          ...newExp,
-          siteName: targetSiteName,
-          siteCode: targetSiteCode,
-          siteId,
-        });
-        return;
-      }
-    } catch (err) {
-      console.warn('Failed saving expense update to DB:', err.message);
+    if (!siteId) {
+      alert('Could not identify the construction site. Please select a valid site.');
+      return;
     }
 
-    const formattedUpdate = {
-      id: String(updates.length + 1).padStart(2, '0'),
-      date: newExp.date || new Date().toISOString().split('T')[0],
-      siteName: targetSiteName,
-      siteCode: targetSiteCode,
-      activity: `${newExp.category} Expense: ${newExp.description}`,
-      description: `${newExp.description} (${newExp.amount}) supplied by ${
-        newExp.supplier || 'Vendor'
-      }. Payment: ${newExp.paymentStatus}`,
-      labourCount: newExp.category === 'Labour' ? Number(newExp.quantity) || 4 : 4,
-      materialsUsed:
-        newExp.category === 'Materials'
-          ? newExp.description.split(' - ')[0] || 'Material'
-          : '-',
-      duration: '8 hrs',
-      progress: 70,
-      status: 'In Progress',
-    };
+    try {
+      const payload = buildExpensePayload(newExp, {
+        _id: siteId,
+        name: targetSiteName,
+        code: targetSiteCode,
+      });
 
-    setUpdates([formattedUpdate, ...updates]);
+      await expenseApi.create(payload);
 
-    setSitesDirectory((prev) =>
-      prev.map((s) =>
-        s.name === targetSiteName
-          ? { ...s, updatesCount: s.updatesCount + 1, lastUpdated: 'Today' }
-          : s
-      )
-    );
+      await dailyUpdateApi.create({
+        siteId,
+        site: siteId,
+        siteName: targetSiteName,
+        siteCode: targetSiteCode,
+        title: `${payload.category} Expense: ${payload.description}`,
+        description: `${payload.description} (₹${Number(payload.amount).toLocaleString('en-IN')}) - ${payload.paymentStatus}`,
+        workPhase: payload.category,
+        workersCount: payload.category === 'Labour' ? Number(payload.quantity) || 1 : 0,
+        date: payload.date || new Date().toISOString(),
+      });
 
-    onExpenseAdded({
-      ...newExp,
-      siteName: targetSiteName,
-      siteCode: targetSiteCode,
-    });
+      await loadSitesAndUpdates();
+      onExpenseAdded({
+        ...payload,
+        siteName: targetSiteName,
+        siteCode: targetSiteCode,
+        siteId,
+      });
+    } catch (err) {
+      console.warn('Failed saving expense update to DB:', err.message);
+      alert(`Could not save expense: ${err.message}`);
+    }
   };
 
   const handleDeleteUpdate = async (id) => {
@@ -652,8 +631,7 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
                     <th className="py-3.5 px-4">Date</th>
                     <th className="py-3.5 px-4">Activity Name</th>
                     <th className="py-3.5 px-4">Description</th>
-                    <th className="py-3.5 px-4 text-center">Labour</th>
-                    <th className="py-3.5 px-4">Materials Used</th>
+                    <th className="py-3.5 px-4 text-center">Labour / Material</th>
                     <th className="py-3.5 px-4 text-center">Status</th>
                     <th className="py-3.5 px-4 text-center">Action</th>
                   </tr>
@@ -661,7 +639,7 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
                 <tbody className="divide-y divide-slate-100">
                   {siteActivities.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="py-12 text-center text-slate-400">
+                      <td colSpan="7" className="py-12 text-center text-slate-400">
                         <CalendarCheck size={32} className="mx-auto mb-2 text-slate-300" />
                         <div className="font-bold text-slate-700 text-sm">
                           No daily updates recorded for {activeSite.name} yet.
@@ -693,15 +671,41 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
                           {item.description}
                         </td>
 
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            <Users size={11} />
-                            {item.labourCount}
-                          </span>
-                        </td>
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                          {(() => {
+                            const phase = String(item.workPhase || '').toLowerCase();
+                            const act = String(item.activity || '').toLowerCase();
+                            const isMaterial =
+                              phase === 'materials' ||
+                              act.includes('materials expense') ||
+                              (item.materialsUsed && item.materialsUsed !== '-' && !(item.labourCount > 0));
+                            const isLabour =
+                              phase === 'labour' ||
+                              act.includes('labour expense') ||
+                              (item.labourCount || 0) > 0;
 
-                        <td className="py-3.5 px-4 font-semibold text-slate-700">
-                          {item.materialsUsed}
+                            if (isMaterial) {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <Layers size={11} />
+                                  Material
+                                </span>
+                              );
+                            }
+                            if (isLabour) {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                  <Users size={11} />
+                                  {item.labourCount || 1} labor
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                {item.workPhase && item.workPhase !== 'General Construction' ? item.workPhase : '-'}
+                              </span>
+                            );
+                          })()}
                         </td>
 
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">

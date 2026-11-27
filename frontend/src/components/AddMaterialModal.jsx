@@ -4,10 +4,8 @@ import { modalBackdropVariants, modalContentVariants } from '../utils/animations
 import {
   ArrowLeft,
   Package,
-  IndianRupee,
   Upload,
   Save,
-  CheckCircle2,
   Layers,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS } from '../constants/constructionData';
@@ -17,7 +15,9 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
     name: '',
     category: 'Cement',
     unit: 'Bags',
-    price: '420',
+    size: '',
+    type: '',
+    brand: '',
     description: '',
   });
 
@@ -26,6 +26,15 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
     if (!formData.name) return;
 
     onSaveMaterial(formData);
+    setFormData({
+      name: '',
+      category: 'Cement',
+      unit: 'Bags',
+      size: '',
+      type: '',
+      brand: '',
+      description: '',
+    });
     onClose();
   };
 
@@ -58,7 +67,7 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
             <div>
               <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Add Material</h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Add a new construction material with pricing.
+                Add a construction material with category, measurement unit, and specifications.
               </p>
             </div>
           </div>
@@ -124,7 +133,7 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
-                  Unit <span className="text-rose-500">*</span>
+                  Measurement Unit <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={formData.unit}
@@ -132,29 +141,55 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
                 >
                   <option value="Bags">Bags</option>
-                  <option value="Loads">Loads</option>
-                  <option value="Tons">Tons</option>
                   <option value="Kg">Kg</option>
-                  <option value="Piece">Piece</option>
-                  <option value="Cu. ft">Cu. ft</option>
+                  <option value="Tonnes">Tonnes</option>
+                  <option value="Pieces">Pieces</option>
+                  <option value="Numbers">Numbers</option>
+                  <option value="Cubic Feet">Cubic Feet</option>
+                  <option value="Loads">Loads</option>
                   <option value="Liters">Liters</option>
                 </select>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1.5">
-                  Standard Price (₹) <span className="text-rose-500">*</span>
+                  Size (Optional)
                 </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">₹</span>
-                  <input
-                    type="number"
-                    placeholder="Enter price per unit"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold"
-                  />
-                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. 4 inch, 6 inch, 12mm, 20mm"
+                  value={formData.size}
+                  onChange={(e) => setFormData({ ...formData, size: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1.5">
+                  Type (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. OPC 53, PPC, Chamber, Fly Ash"
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1.5">
+                  Brand (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UltraTech, Dalmia, Tata Tiscon"
+                  value={formData.brand}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
+                />
               </div>
             </div>
 
@@ -190,12 +225,12 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   <span>Examples</span>
                 </div>
                 <ul className="text-[11px] text-slate-600 space-y-1 font-medium">
-                  <li>• M-Sand / P-Sand – Load – ₹5,500</li>
-                  <li>• 20mm Blue Metal – Load – ₹6,000</li>
-                  <li>• Cement – Bag – ₹420</li>
-                  <li>• Steel – Kg – ₹75</li>
-                  <li>• Chengal Brick – Piece – ₹8</li>
-                  <li>• AAC Block – Piece – ₹65</li>
+                  <li>• Cement – Bags / Kg (OPC 53, PPC)</li>
+                  <li>• AAC Blocks – Pieces / Numbers (4", 6", 8")</li>
+                  <li>• Bricks – Pieces (Chamber, Fly Ash, Red Brick)</li>
+                  <li>• Steel – Kg / Tonnes (8mm–25mm)</li>
+                  <li>• M-Sand / P-Sand – Tonnes / Cubic Feet</li>
+                  <li>• Pricing is entered during Inward / Outward / Expenses</li>
                 </ul>
               </div>
             </div>

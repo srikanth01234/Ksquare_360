@@ -28,29 +28,6 @@ export default function App() {
   // Global shared materials catalog (syncs real-time between Master Data and Godown Stock)
   const [materials, setMaterials] = useState(INITIAL_MATERIALS);
 
-  // Global shared expenses state
-  const [expenses, setExpenses] = useState([]);
-
-  const handleAddExpense = (newExp) => {
-    const formatted = {
-      ...newExp,
-      id: String(expenses.length + 1).padStart(2, '0'),
-      categoryColor:
-        newExp.category === 'Materials'
-          ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
-          : newExp.category === 'Labour'
-          ? 'bg-sky-50 text-sky-700 border-sky-200/80'
-          : newExp.category === 'Additional Work'
-          ? 'bg-purple-50 text-purple-700 border-purple-200/80'
-          : newExp.category === 'Vehicle Rent'
-          ? 'bg-indigo-50 text-indigo-700 border-indigo-200/80'
-          : newExp.category === 'Rent'
-          ? 'bg-amber-50 text-amber-800 border-amber-200/80'
-          : 'bg-slate-100 text-slate-700 border-slate-200',
-    };
-    setExpenses([formatted, ...expenses]);
-  };
-
   const handleNavChange = (nav) => {
     setActiveNav(nav);
     if (nav !== 'Sites') {
@@ -163,7 +140,6 @@ export default function App() {
 
               {activeNav === 'Site Expenses' && !selectedSiteExpense && (
                 <SiteExpenses
-                  sharedExpenses={expenses}
                   onSelectSiteExpense={(exp) =>
                     setSelectedSiteExpense({
                       _id: exp.siteId || (exp.site && exp.site._id) || (typeof exp.site === 'string' ? exp.site : null),
@@ -187,9 +163,7 @@ export default function App() {
 
               {activeNav === 'Payments' && <Payments />}
 
-              {activeNav === 'Daily Updates' && (
-                <DailyUpdates onExpenseAdded={handleAddExpense} />
-              )}
+              {activeNav === 'Daily Updates' && <DailyUpdates />}
 
               {activeNav === 'Billing & Invoices' && !isCreatingInvoice && (
                 <BillingInvoices

@@ -30,9 +30,11 @@ import {
   ShieldCheck,
   Wallet,
   Info,
+  Lock,
+  AlertTriangle,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
-import { siteApi } from '../services/api';
+import { siteApi, labourApi } from '../services/api';
 
 // Material type classification helpers
 const isSteelMaterial = (name) => name === 'Steel';
@@ -89,28 +91,46 @@ const BRICK_BLOCK_TYPES = [
   'AAC Block',
 ];
 
+const noSpinnerClass =
+  '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
+
+const blockNegativeKeys = (e) => {
+  if (['-', '+', 'e', 'E'].includes(e.key)) {
+    e.preventDefault();
+  }
+};
+
+const sanitizeNonNegative = (val) => {
+  if (val === '') return '';
+  const cleaned = String(val).replace(/[^0-9.]/g, '');
+  const num = parseFloat(cleaned);
+  if (isNaN(num) || num < 0) return '0';
+  return cleaned;
+};
+
 const createDefaultRow = (materialName) => {
   const id = Date.now() + Math.random();
   if (isSteelMaterial(materialName)) {
-    return { id, steelType: '12 mm', length: '', weight: '', amount: '' };
+    return { id, steelType: '12 mm', length: '', weight: '', rate: '', amount: '' };
   }
   if (isRingMaterial(materialName)) {
-    return { id, ringType: '8 mm', quantity: '', weight: '', amount: '' };
+    return { id, ringType: '8 mm', quantity: '', weight: '', rate: '', amount: '' };
   }
   if (isSandMaterial(materialName)) {
-    return { id, sandType: materialName || 'M-Sand', quantity: '', amount: '' };
+    return { id, sandType: materialName || 'M-Sand', quantity: '', rate: '', amount: '' };
   }
   if (isBlueMetalMaterial(materialName)) {
-    return { id, materialType: materialName || '20 mm Blue Metal', quantity: '', amount: '' };
+    return { id, materialType: materialName || '20 mm Blue Metal', quantity: '', rate: '', amount: '' };
   }
   if (isBrickOrBlockMaterial(materialName)) {
-    return { id, materialType: materialName || 'Chamber Bricks', quantity: '', amount: '' };
+    return { id, materialType: materialName || 'Chamber Bricks', quantity: '', rate: '', amount: '' };
   }
   return {
     id,
     material: materialName || 'Cement',
     quantity: materialName === 'Cement' ? '50' : '',
     unit: materialName === 'Cement' ? 'Bags' : 'Bags',
+    rate: materialName === 'Cement' ? '420' : '',
     amount: materialName === 'Cement' ? '21000' : '',
   };
 };
@@ -123,6 +143,8 @@ export default function AddExpenseModal({
 }) {
   const fileInputRef = useRef(null);
   const [sitesList, setSitesList] = useState([]);
+  const [labourList, setLabourList] = useState([]);
+  const [paymentError, setPaymentError] = useState('');
   const [mainTab, setMainTab] = useState('Expenses'); // 'Expenses' | 'Additional Work'
   const [formData, setFormData] = useState({
     category: 'Materials',
@@ -137,11 +159,18 @@ export default function AddExpenseModal({
     unit: 'Bags',
     rate: '420',
     // Labour specific fields
+    labourEntryMode: 'EXISTING', // 'EXISTING' | 'NEW'
+    isGroupLabour: false,
+    selectedLabourId: '',
+    manualLabourName: '',
     labourType: 'Mason',
     labourContractor: 'Direct Labour',
-    labourWorkersCount: '4',
-    labourDailyWage: '1000',
+    labourWorkersCount: '1',
+    labourDailyWage: '800',
     labourDays: '1',
+    labourOtRate: '100',
+    labourOtHours: '0',
+    labourExtraAmount: '0',
     // Rental specific fields
     rentalEquipment: 'JCB / Excavator',
     rentalVendor: '',
@@ -171,7 +200,8 @@ export default function AddExpenseModal({
     rentalAmount: '',
     tipsAmount: '',
     billingAmount: '', // Empty by default and editable
-    paymentMethod: 'Cash', // 'Cash' | 'UPI'
+    partialPaidAmount: '',
+    paymentMethod: 'Cash', // 'Cash' | 'UPI' | ''
     paymentStatus: 'Paid',
     transactionId: '',
     notes: '',
@@ -239,9 +269,10 @@ export default function AddExpenseModal({
     }));
   };
 
-  // Load live sites from database
+  // Load live sites and labour directory from database
   useEffect(() => {
     if (isOpen) {
+      setPaymentError('');
       siteApi.getAll().then((res) => {
         const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
         setSitesList(list);
@@ -256,6 +287,39 @@ export default function AddExpenseModal({
         console.warn('Could not fetch sites for expense modal:', err.message);
         setSitesList([]);
       });
+
+      labourApi.getAll().then((res) => {
+        const workers = (Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []).filter(
+          (w) => w.status !== 'Inactive' && w.engagementType !== 'Labour Contract'
+        );
+        setLabourList(workers);
+        if (workers.length > 0) {
+          const first = workers[0];
+          setFormData((prev) => {
+            if (prev.selectedLabourId && prev.selectedLabourId !== '__MANUAL__') return prev;
+            return {
+              ...prev,
+              labourEntryMode: 'EXISTING',
+              selectedLabourId: first._id || first.id,
+              manualLabourName: first.name,
+              labourType: first.workerType || prev.labourType,
+              labourWorkersCount: '1',
+              labourDays: '1',
+              labourDailyWage: String(first.dailyWage ?? 800),
+              labourOtRate: String(first.overtimeRate ?? 100),
+              labourOtHours: '0',
+              labourExtraAmount: '0',
+              supplier: first.name,
+              labourContractor: first.name,
+            };
+          });
+        } else {
+          setFormData((prev) => ({ ...prev, labourEntryMode: 'NEW', selectedLabourId: '__MANUAL__' }));
+        }
+      }).catch((err) => {
+        console.warn('Could not fetch labour records for expense modal:', err.message);
+        setLabourList([]);
+      });
     }
   }, [isOpen, lockedSite]);
 
@@ -268,7 +332,7 @@ export default function AddExpenseModal({
 
   // Dynamic Material Details Table rows
   const [materialItems, setMaterialItems] = useState([
-    { id: 1, material: 'Cement', quantity: '50', unit: 'Bags', amount: '21000' },
+    { id: 1, material: 'Cement', quantity: '50', unit: 'Bags', rate: '420', amount: '21000' },
   ]);
 
   // Dynamic Additional Work Materials Table rows
@@ -297,7 +361,23 @@ export default function AddExpenseModal({
   const [screenshotName, setScreenshotName] = useState('');
   const [totalAmount, setTotalAmount] = useState(21000);
 
-  // Overall Expense Calculations
+  // Labour OT & Extra calculations
+  const labourBaseSalary = useMemo(() => {
+    const count = parseFloat(formData.labourWorkersCount) || 1;
+    const wage = parseFloat(formData.labourDailyWage) || 0;
+    const days = parseFloat(formData.labourDays) || 1;
+    return count * wage * days;
+  }, [formData.labourWorkersCount, formData.labourDailyWage, formData.labourDays]);
+
+  const labourOtAmount = useMemo(() => {
+    const otRate = parseFloat(formData.labourOtRate) || 0;
+    const otHours = parseFloat(formData.labourOtHours) || 0;
+    return otRate * otHours;
+  }, [formData.labourOtRate, formData.labourOtHours]);
+
+  const labourExtraNum = parseFloat(formData.labourExtraAmount) || 0;
+
+  // Overall Expense Calculations (Calculated Amount)
   const computedAmount = useMemo(() => {
     if (formData.category === 'Materials') {
       return materialItems.reduce(
@@ -307,10 +387,7 @@ export default function AddExpenseModal({
     }
     if (formData.category === 'Labour') {
       if (formData.customAmount) return parseFloat(formData.customAmount) || 0;
-      const count = parseFloat(formData.labourWorkersCount) || 1;
-      const wage = parseFloat(formData.labourDailyWage) || 0;
-      const days = parseFloat(formData.labourDays) || 1;
-      return count * wage * days;
+      return labourBaseSalary + labourOtAmount + labourExtraNum;
     }
     if (formData.category === 'Rental') {
       if (formData.customAmount) return parseFloat(formData.customAmount) || 0;
@@ -322,9 +399,9 @@ export default function AddExpenseModal({
   }, [
     formData.category,
     formData.customAmount,
-    formData.labourWorkersCount,
-    formData.labourDailyWage,
-    formData.labourDays,
+    labourBaseSalary,
+    labourOtAmount,
+    labourExtraNum,
     formData.rentalDuration,
     formData.rentalRate,
     materialItems,
@@ -334,6 +411,19 @@ export default function AddExpenseModal({
   const vehicleRental = formData.category === 'Materials' ? (parseFloat(formData.rentalAmount) || 0) : 0;
   const tips = formData.category === 'Materials' ? (parseFloat(formData.tipsAmount) || 0) : 0;
   const totalExpenseAmount = computedAmount + vehicleRental + tips;
+
+  // Billing Amount overrides Calculated Amount as the Final Actual Expense Amount
+  const parsedBillingAmount = formData.billingAmount !== '' ? parseFloat(formData.billingAmount) : NaN;
+  const finalExpenseAmount =
+    !isNaN(parsedBillingAmount) && parsedBillingAmount > 0 ? parsedBillingAmount : totalExpenseAmount;
+
+  const parsedPartialPaid = formData.partialPaidAmount !== '' ? parseFloat(formData.partialPaidAmount) : 0;
+  const remainingOutstanding =
+    formData.paymentStatus === 'Partial'
+      ? Math.max(0, finalExpenseAmount - (isNaN(parsedPartialPaid) ? 0 : parsedPartialPaid))
+      : formData.paymentStatus === 'Pending'
+      ? finalExpenseAmount
+      : 0;
 
   useEffect(() => {
     setTotalAmount(totalExpenseAmount);
@@ -465,17 +555,27 @@ export default function AddExpenseModal({
             if (currentLen && parseFloat(currentLen) > 0) {
               const calcWeight = calculateSteelWeight(currentType, currentLen);
               updated.weight = calcWeight;
-              // If user already specified a rate per kg in formData.rate, also calculate amount
-              if (formData.rate && parseFloat(formData.rate) > 0 && calcWeight) {
-                updated.amount = String(Math.round(parseFloat(calcWeight) * parseFloat(formData.rate)));
+              const rowRate = parseFloat(updated.rate) || parseFloat(formData.rate) || 0;
+              if (rowRate > 0 && calcWeight) {
+                updated.amount = String(Math.round(parseFloat(calcWeight) * rowRate));
               }
             } else if (!currentLen) {
               updated.weight = '';
             }
-          } else if (field === 'weight') {
-            // If user manually modifies weight, and rate exists, also update amount
-            if (formData.rate && parseFloat(formData.rate) > 0 && value && parseFloat(value) > 0) {
-              updated.amount = String(Math.round(parseFloat(value) * parseFloat(formData.rate)));
+          } else if (field === 'weight' || field === 'rate') {
+            const w = parseFloat(field === 'weight' ? value : updated.weight) || 0;
+            const r = parseFloat(field === 'rate' ? value : updated.rate) || 0;
+            if (w > 0 && r > 0) {
+              updated.amount = String(Math.round(w * r));
+            }
+          }
+        } else {
+          // Non-steel materials: auto-calculate Amount = Quantity * Price per Unit
+          if (field === 'quantity' || field === 'rate') {
+            const q = parseFloat(field === 'quantity' ? value : updated.quantity) || 0;
+            const r = parseFloat(field === 'rate' ? value : updated.rate) || 0;
+            if (q > 0 && r > 0) {
+              updated.amount = String(Math.round(q * r));
             }
           }
         }
@@ -483,6 +583,81 @@ export default function AddExpenseModal({
         return updated;
       })
     );
+  };
+
+  const handleLabourTabSwitch = (mode) => {
+    if (mode === 'EXISTING') {
+      const first = labourList[0];
+      if (first) {
+        setFormData((prev) => ({
+          ...prev,
+          labourEntryMode: 'EXISTING',
+          isGroupLabour: false,
+          selectedLabourId: first._id || first.id,
+          manualLabourName: first.name,
+          labourType: first.workerType || 'Mason',
+          labourWorkersCount: '1',
+          labourDays: '1',
+          labourDailyWage: String(first.dailyWage ?? 800),
+          labourOtRate: String(first.overtimeRate ?? 100),
+          labourOtHours: '0',
+          labourExtraAmount: '0',
+          supplier: first.name,
+          labourContractor: first.name,
+          description: `${first.name} - ${first.workerType || 'Labour'} Wages`,
+        }));
+      } else {
+        setFormData((prev) => ({ ...prev, labourEntryMode: 'EXISTING', isGroupLabour: false }));
+      }
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        labourEntryMode: 'NEW',
+        selectedLabourId: '__MANUAL__',
+        manualLabourName: '',
+        labourWorkersCount: '1',
+        labourDays: '1',
+        labourDailyWage: '800',
+        labourOtRate: '100',
+        labourOtHours: '0',
+        labourExtraAmount: '0',
+        supplier: 'Direct Labour',
+        description: `${prev.labourType || 'Mason'} Daily Wages`,
+      }));
+    }
+  };
+
+  const handleSelectLabourer = (selectedId) => {
+    const worker = labourList.find((w) => (w._id || w.id) === selectedId);
+    if (worker) {
+      setFormData((prev) => ({
+        ...prev,
+        labourEntryMode: 'EXISTING',
+        isGroupLabour: false,
+        selectedLabourId: selectedId,
+        manualLabourName: worker.name,
+        labourType: worker.workerType || prev.labourType,
+        labourWorkersCount: '1',
+        labourDays: '1',
+        labourDailyWage: String(worker.dailyWage ?? 800),
+        labourOtRate: String(worker.overtimeRate ?? 100),
+        labourOtHours: '0',
+        labourExtraAmount: '0',
+        supplier: worker.name,
+        labourContractor: worker.name,
+        description: `${worker.name} - ${worker.workerType || 'Labour'} Wages`,
+      }));
+    }
+  };
+
+  const handlePaymentStatusChange = (newStatus) => {
+    setPaymentError('');
+    setFormData((prev) => ({
+      ...prev,
+      paymentStatus: newStatus,
+      paymentMethod: newStatus === 'Pending' ? '' : (prev.paymentMethod || 'Cash'),
+      partialPaidAmount: newStatus === 'Partial' ? prev.partialPaidAmount : '',
+    }));
   };
 
   const handleScreenshotChange = (e) => {
@@ -507,7 +682,35 @@ export default function AddExpenseModal({
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setPaymentError('');
     if (!formData.description) return;
+
+    // Validate Payment Status & Partial Payment
+    if (formData.paymentStatus !== 'Pending' && !formData.paymentMethod) {
+      setPaymentError('Please select a payment method (Cash or UPI).');
+      return;
+    }
+
+    let finalPaid = finalExpenseAmount;
+    let finalPending = 0;
+    if (formData.paymentStatus === 'Pending') {
+      finalPaid = 0;
+      finalPending = finalExpenseAmount;
+    } else if (formData.paymentStatus === 'Partial') {
+      const pAmt = parseFloat(formData.partialPaidAmount);
+      if (isNaN(pAmt) || pAmt <= 0) {
+        setPaymentError('Enter a valid partial payment amount greater than ₹0.');
+        return;
+      }
+      if (pAmt >= finalExpenseAmount) {
+        setPaymentError(
+          `Partial payment must be less than total billing amount (₹${finalExpenseAmount.toLocaleString('en-IN')}). Select "Paid" for full payment.`
+        );
+        return;
+      }
+      finalPaid = pAmt;
+      finalPending = Math.max(0, finalExpenseAmount - pAmt);
+    }
 
     let siteId = formData.siteId;
     let siteName = 'Site';
@@ -526,12 +729,19 @@ export default function AddExpenseModal({
       siteCode = siteParts[1] ? siteParts[1].replace(')', '') : '';
     }
 
-    const formattedAmount = `₹${totalExpenseAmount.toLocaleString('en-IN')}`;
+    const formattedAmount = `₹${finalExpenseAmount.toLocaleString('en-IN')}`;
 
     const isAdditional = mainTab === 'Additional Work';
     const finalCategory = isAdditional ? 'Additional Work' : formData.category;
     const finalExpenseType = isAdditional ? 'ADDITIONAL_WORK' : 'NORMAL';
     const finalBillable = isAdditional ? Boolean(formData.additionalWorkClientApproved) : false;
+
+    const labourNameResolved =
+      formData.category === 'Labour'
+        ? (formData.selectedLabourId !== '__MANUAL__'
+            ? (labourList.find((w) => (w._id || w.id) === formData.selectedLabourId)?.name || formData.supplier)
+            : (formData.manualLabourName || formData.supplier))
+        : null;
 
     const newExpense = {
       id: Date.now().toString(),
@@ -546,8 +756,8 @@ export default function AddExpenseModal({
       billableToClient: finalBillable,
       materialName: formData.category === 'Materials' ? formData.materialName : null,
       description: formData.description || (formData.materialName ? `${formData.materialName} Purchase` : 'Site Expense'),
-      supplier: formData.supplier || '-',
-      supplierName: formData.supplier || '-',
+      supplier: labourNameResolved || formData.supplier || '-',
+      supplierName: labourNameResolved || formData.supplier || '-',
       invoiceNo: formData.invoiceNo || '-',
       quantity:
         formData.category === 'Labour'
@@ -567,16 +777,32 @@ export default function AddExpenseModal({
           : formData.category === 'Rental'
           ? parseFloat(formData.rentalRate) || 0
           : parseFloat(formData.rate) || 0,
-      amount: totalExpenseAmount,
+      amount: finalExpenseAmount,
+      calculatedAmount: totalExpenseAmount,
+      billingAmount: !isNaN(parsedBillingAmount) && parsedBillingAmount > 0 ? parsedBillingAmount : null,
       formattedAmount,
       materialCost,
       vehicleType: formData.category === 'Materials' ? formData.vehicleType : null,
       rentalAmount: vehicleRental,
       tipsAmount: tips,
-      totalExpenseAmount,
-      billingAmount: formData.billingAmount ? parseFloat(formData.billingAmount) : null,
+      totalExpenseAmount: finalExpenseAmount,
+      labourDetails:
+        formData.category === 'Labour'
+          ? {
+              labourId: formData.selectedLabourId !== '__MANUAL__' ? formData.selectedLabourId : null,
+              labourName: labourNameResolved || '',
+              workerType: formData.labourType,
+              dailyWage: parseFloat(formData.labourDailyWage) || 0,
+              otRate: parseFloat(formData.labourOtRate) || 0,
+              otHours: parseFloat(formData.labourOtHours) || 0,
+              otAmount: labourOtAmount,
+              extraAmount: labourExtraNum,
+            }
+          : null,
       paymentStatus: formData.paymentStatus,
-      paymentMethod: formData.paymentMethod,
+      paidAmount: finalPaid,
+      pendingAmount: finalPending,
+      paymentMethod: formData.paymentStatus === 'Pending' ? '' : formData.paymentMethod,
       transactionId: formData.transactionId ? formData.transactionId.trim() : null,
       paymentScreenshot: screenshotPreview || null,
       notes: formData.notes || '',
@@ -968,7 +1194,8 @@ export default function AddExpenseModal({
                           <>
                             <th className="py-3 px-3 w-40">Sand Type</th>
                             <th className="py-3 px-3">Quantity (Tons)</th>
-                            <th className="py-3 px-3">Amount (₹)</th>
+                            <th className="py-3 px-3">Price / Ton (₹)</th>
+                            <th className="py-3 px-3">Calculated (₹)</th>
                             <th className="py-3 px-2 w-12 text-center">Action</th>
                           </>
                         )}
@@ -977,16 +1204,18 @@ export default function AddExpenseModal({
                           <>
                             <th className="py-3 px-3 w-44">Material Type</th>
                             <th className="py-3 px-3">Quantity (Tons)</th>
-                            <th className="py-3 px-3">Amount (₹)</th>
+                            <th className="py-3 px-3">Price / Ton (₹)</th>
+                            <th className="py-3 px-3">Calculated (₹)</th>
                             <th className="py-3 px-2 w-12 text-center">Action</th>
                           </>
                         )}
 
                         {isBrickOrBlockMaterial(formData.materialName) && (
                           <>
-                            <th className="py-3 px-3 w-48">Material Type</th>
-                            <th className="py-3 px-3">Quantity (Pieces)</th>
-                            <th className="py-3 px-3">Amount (₹)</th>
+                            <th className="py-3 px-3 w-44">Material Type</th>
+                            <th className="py-3 px-3">Quantity (Nos)</th>
+                            <th className="py-3 px-3">Price / Unit (₹)</th>
+                            <th className="py-3 px-3">Calculated (₹)</th>
                             <th className="py-3 px-2 w-12 text-center">Action</th>
                           </>
                         )}
@@ -997,10 +1226,11 @@ export default function AddExpenseModal({
                           !isBlueMetalMaterial(formData.materialName) &&
                           !isBrickOrBlockMaterial(formData.materialName) && (
                             <>
-                              <th className="py-3 px-3 w-44">Material</th>
+                              <th className="py-3 px-3 w-40">Material</th>
                               <th className="py-3 px-3">Quantity</th>
-                              <th className="py-3 px-3 w-28">Unit</th>
-                              <th className="py-3 px-3">Amount (₹)</th>
+                              <th className="py-3 px-3 w-24">Unit</th>
+                              <th className="py-3 px-3">Price / Unit (₹)</th>
+                              <th className="py-3 px-3">Calculated (₹)</th>
                               <th className="py-3 px-2 w-12 text-center">Action</th>
                             </>
                           )}
@@ -1180,8 +1410,22 @@ export default function AddExpenseModal({
                                   step="any"
                                   placeholder="Quantity (Tons)"
                                   value={item.quantity || ''}
+                                  onWheel={(e) => e.currentTarget.blur()}
                                   onChange={(e) =>
                                     handleRowChange(item.id, 'quantity', e.target.value)
+                                  }
+                                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="Price / Ton"
+                                  value={item.rate || ''}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  onChange={(e) =>
+                                    handleRowChange(item.id, 'rate', e.target.value)
                                   }
                                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
                                 />
@@ -1196,6 +1440,7 @@ export default function AddExpenseModal({
                                     step="any"
                                     placeholder="Amount"
                                     value={item.amount || ''}
+                                    onWheel={(e) => e.currentTarget.blur()}
                                     onChange={(e) =>
                                       handleRowChange(item.id, 'amount', e.target.value)
                                     }
@@ -1230,8 +1475,22 @@ export default function AddExpenseModal({
                                   step="any"
                                   placeholder="Quantity (Tons)"
                                   value={item.quantity || ''}
+                                  onWheel={(e) => e.currentTarget.blur()}
                                   onChange={(e) =>
                                     handleRowChange(item.id, 'quantity', e.target.value)
+                                  }
+                                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="Price / Ton"
+                                  value={item.rate || ''}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  onChange={(e) =>
+                                    handleRowChange(item.id, 'rate', e.target.value)
                                   }
                                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
                                 />
@@ -1246,6 +1505,7 @@ export default function AddExpenseModal({
                                     step="any"
                                     placeholder="Amount"
                                     value={item.amount || ''}
+                                    onWheel={(e) => e.currentTarget.blur()}
                                     onChange={(e) =>
                                       handleRowChange(item.id, 'amount', e.target.value)
                                     }
@@ -1294,10 +1554,24 @@ export default function AddExpenseModal({
                                 <input
                                   type="number"
                                   step="any"
-                                  placeholder="Pieces"
+                                  placeholder="Qty (Nos)"
                                   value={item.quantity || ''}
+                                  onWheel={(e) => e.currentTarget.blur()}
                                   onChange={(e) =>
                                     handleRowChange(item.id, 'quantity', e.target.value)
+                                  }
+                                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                                />
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="Price / Unit"
+                                  value={item.rate || ''}
+                                  onWheel={(e) => e.currentTarget.blur()}
+                                  onChange={(e) =>
+                                    handleRowChange(item.id, 'rate', e.target.value)
                                   }
                                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
                                 />
@@ -1312,6 +1586,7 @@ export default function AddExpenseModal({
                                     step="any"
                                     placeholder="Amount"
                                     value={item.amount || ''}
+                                    onWheel={(e) => e.currentTarget.blur()}
                                     onChange={(e) =>
                                       handleRowChange(item.id, 'amount', e.target.value)
                                     }
@@ -1356,6 +1631,7 @@ export default function AddExpenseModal({
                                     step="any"
                                     placeholder="Quantity"
                                     value={item.quantity || ''}
+                                    onWheel={(e) => e.currentTarget.blur()}
                                     onChange={(e) =>
                                       handleRowChange(item.id, 'quantity', e.target.value)
                                     }
@@ -1387,6 +1663,19 @@ export default function AddExpenseModal({
                                   </div>
                                 </td>
                                 <td className="py-2.5 px-3">
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    placeholder="Price / Unit"
+                                    value={item.rate || ''}
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    onChange={(e) =>
+                                      handleRowChange(item.id, 'rate', e.target.value)
+                                    }
+                                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                                  />
+                                </td>
+                                <td className="py-2.5 px-3">
                                   <div className="relative">
                                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold">
                                       ₹
@@ -1396,6 +1685,7 @@ export default function AddExpenseModal({
                                       step="any"
                                       placeholder="Amount"
                                       value={item.amount || ''}
+                                      onWheel={(e) => e.currentTarget.blur()}
                                       onChange={(e) =>
                                         handleRowChange(item.id, 'amount', e.target.value)
                                       }
@@ -1589,7 +1879,7 @@ export default function AddExpenseModal({
             </>
           )}
 
-          {/* 2. LABOUR: Dedicated Labour Deployment & Wages Section */}
+          {/* 2. LABOUR: Dedicated Labour Deployment & Daily Wages Section */}
           {formData.category === 'Labour' && (
             <div className="space-y-3 pt-2">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-300 text-blue-800 text-xs font-extrabold">
@@ -1598,122 +1888,338 @@ export default function AddExpenseModal({
               </div>
 
               <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-300 shadow-xs space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {/* Labour Role */}
+                {/* Two Selection Tabs: Existing Labour vs + New Labour */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => handleLabourTabSwitch('EXISTING')}
+                    className={`py-2 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                      formData.labourEntryMode === 'EXISTING'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-950 hover:bg-white/70'
+                    }`}
+                  >
+                    Existing Labour
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLabourTabSwitch('NEW')}
+                    className={`py-2 px-3 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                      formData.labourEntryMode === 'NEW'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-700 hover:text-slate-950 hover:bg-white/70'
+                    }`}
+                  >
+                    + New Labour
+                  </button>
+                </div>
+
+                {/* Tab 1: Existing Labour Selection */}
+                {formData.labourEntryMode === 'EXISTING' ? (
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      Labour / Worker Role <span className="text-rose-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-slate-900">
+                        Select Labour <span className="text-rose-500">*</span>
+                      </label>
+                      {formData.labourType && (
+                        <span className="text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          Role: {formData.labourType}
+                        </span>
+                      )}
+                    </div>
                     <div className="relative">
                       <select
-                        value={formData.labourType || 'Mason'}
-                        onChange={(e) => {
-                          const role = e.target.value;
-                          const count = formData.labourWorkersCount || '4';
-                          setFormData({
-                            ...formData,
-                            labourType: role,
-                            description: `${role} Daily Wages (${count} Workers)`,
-                          });
-                        }}
-                        className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
+                        value={formData.selectedLabourId}
+                        onChange={(e) => handleSelectLabourer(e.target.value)}
+                        className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-950 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
                       >
-                        {LABOUR_WORKER_TYPES.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
+                        {labourList.length === 0 ? (
+                          <option value="">No registered labourers found</option>
+                        ) : (
+                          labourList.map((w) => (
+                            <option key={w._id || w.id} value={w._id || w.id}>
+                              {w.name} ({w.workerType} · ₹{Number(w.dailyWage || 0).toLocaleString('en-IN')}/day)
+                            </option>
+                          ))
+                        )}
                       </select>
-                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
                     </div>
+                    <p className="text-[11px] font-semibold text-blue-700 mt-1.5 flex items-center gap-1">
+                      <Lock size={11} />
+                      <span>Salary and OT rate synced from Labour module</span>
+                    </p>
                   </div>
+                ) : (
+                  /* Tab 2: + New Labour (One-time manual entry) */
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                          Labour Name <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Murugan"
+                          value={formData.manualLabourName}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setFormData({
+                              ...formData,
+                              manualLabourName: val,
+                              supplier: val || 'Direct Labour',
+                              description: val
+                                ? `${val} - ${formData.labourType || 'Labour'} Wages`
+                                : `${formData.labourType || 'Mason'} Daily Wages`,
+                            });
+                          }}
+                          className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-950 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
+                        />
+                      </div>
 
-                  {/* Contractor / Team Name */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      Contractor / Team <span className="text-slate-400 font-normal">(Optional)</span>
-                    </label>
-                    <div className="relative">
-                      <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input
-                        type="text"
-                        placeholder="e.g. Direct Labour / Contractor Name"
-                        value={formData.supplier}
-                        onChange={(e) => setFormData({ ...formData, supplier: e.target.value, labourContractor: e.target.value })}
-                        className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
-                      />
+                      <div>
+                        <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                          Worker Role <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <select
+                            value={formData.labourType || 'Mason'}
+                            onChange={(e) => {
+                              const role = e.target.value;
+                              setFormData({
+                                ...formData,
+                                labourType: role,
+                                description: formData.manualLabourName
+                                  ? `${formData.manualLabourName} - ${role} Wages`
+                                  : `${role} Daily Wages`,
+                              });
+                            }}
+                            className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-950 pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
+                          >
+                            {LABOUR_WORKER_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {type}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                  {/* Number of Workers */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      No. of Workers <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="4"
-                      value={formData.labourWorkersCount}
-                      onChange={(e) => {
-                        const count = e.target.value;
-                        const role = formData.labourType || 'Mason';
-                        setFormData({
-                          ...formData,
-                          labourWorkersCount: count,
-                          quantity: count,
-                          description: `${role} Daily Wages (${count} Workers)`,
-                        });
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
+                    {/* Group / Contractor Toggle (Only shown when applicable) */}
+                    <div className="pt-1">
+                      <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={formData.isGroupLabour}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setFormData({
+                              ...formData,
+                              isGroupLabour: checked,
+                              labourWorkersCount: checked ? formData.labourWorkersCount || '2' : '1',
+                            });
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Group / Contractor-based labour (multiple workers)</span>
+                      </label>
+                    </div>
 
-                  {/* Daily Wage Rate */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      Daily Wage / Worker (₹) <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                    {formData.isGroupLabour && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                            Contractor / Team Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Raja Contractor Team"
+                            value={formData.labourContractor}
+                            onChange={(e) =>
+                              setFormData({ ...formData, labourContractor: e.target.value, supplier: e.target.value })
+                            }
+                            className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                            No. of Workers <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={formData.labourWorkersCount}
+                            onKeyDown={blockNegativeKeys}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                labourWorkersCount: sanitizeNonNegative(e.target.value) || '1',
+                              })
+                            }
+                            className={`w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${noSpinnerClass}`}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Group 1: Daily Wages */}
+                <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 space-y-2.5">
+                  <div className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">
+                    Daily Wages
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold text-slate-900">
+                          Daily Salary (₹) <span className="text-rose-500">*</span>
+                        </label>
+                        {formData.labourEntryMode === 'EXISTING' && (
+                          <span className="text-[10px] font-bold text-blue-700 flex items-center gap-0.5">
+                            <Lock size={9} /> Read-only
+                          </span>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-600">₹</span>
+                        <input
+                          type="number"
+                          min="1"
+                          readOnly={formData.labourEntryMode === 'EXISTING'}
+                          value={formData.labourDailyWage}
+                          onKeyDown={blockNegativeKeys}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          onChange={(e) => {
+                            const val = sanitizeNonNegative(e.target.value);
+                            setFormData({ ...formData, labourDailyWage: val, rate: val });
+                          }}
+                          className={`w-full pl-8 pr-3.5 py-2.5 border rounded-xl text-xs font-extrabold focus:outline-none shadow-2xs ${noSpinnerClass} ${
+                            formData.labourEntryMode === 'EXISTING'
+                              ? 'bg-slate-100 border-slate-300 text-slate-700 cursor-not-allowed'
+                              : 'bg-white border-slate-300 text-slate-950 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-900 mb-1.5">
+                        Working Days <span className="text-rose-500">*</span>
+                      </label>
                       <input
                         type="number"
-                        step="any"
-                        placeholder="1000"
-                        value={formData.labourDailyWage}
-                        onChange={(e) => setFormData({ ...formData, labourDailyWage: e.target.value, rate: e.target.value })}
-                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
+                        step="0.5"
+                        min="0.5"
+                        placeholder="1"
+                        value={formData.labourDays}
+                        onKeyDown={blockNegativeKeys}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onChange={(e) =>
+                          setFormData({ ...formData, labourDays: sanitizeNonNegative(e.target.value) })
+                        }
+                        className={`w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs ${noSpinnerClass}`}
                       />
                     </div>
                   </div>
+                </div>
 
-                  {/* Days / Shifts */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                      Shifts / Days <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.5"
-                      placeholder="1"
-                      value={formData.labourDays}
-                      onChange={(e) => setFormData({ ...formData, labourDays: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs"
-                    />
+                {/* Group 2: Overtime & Additional Expenses */}
+                <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 space-y-2.5">
+                  <div className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">
+                    Overtime & Additional Expenses
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold text-slate-900">OT Rate / Hr (₹)</label>
+                        {formData.labourEntryMode === 'EXISTING' && (
+                          <Lock size={10} className="text-blue-600" />
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        readOnly={formData.labourEntryMode === 'EXISTING'}
+                        value={formData.labourOtRate}
+                        onKeyDown={blockNegativeKeys}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onChange={(e) =>
+                          setFormData({ ...formData, labourOtRate: sanitizeNonNegative(e.target.value) })
+                        }
+                        className={`w-full px-3 py-2.5 border rounded-xl text-xs font-extrabold focus:outline-none ${noSpinnerClass} ${
+                          formData.labourEntryMode === 'EXISTING'
+                            ? 'bg-slate-100 border-slate-300 text-slate-700 cursor-not-allowed'
+                            : 'bg-white border-slate-300 text-slate-950 focus:ring-2 focus:ring-blue-500/20'
+                        }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-900 mb-1.5">OT Hours</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        placeholder="0"
+                        value={formData.labourOtHours}
+                        onKeyDown={blockNegativeKeys}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onChange={(e) =>
+                          setFormData({ ...formData, labourOtHours: sanitizeNonNegative(e.target.value) })
+                        }
+                        className={`w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${noSpinnerClass}`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-900 mb-1.5">Extra Amount (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={formData.labourExtraAmount}
+                        onKeyDown={blockNegativeKeys}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onChange={(e) =>
+                          setFormData({ ...formData, labourExtraAmount: sanitizeNonNegative(e.target.value) })
+                        }
+                        className={`w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${noSpinnerClass}`}
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">Tea, snacks, coffee, etc.</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-900 mb-1.5">OT Amount</label>
+                      <div className="px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs font-black text-blue-900">
+                        ₹ {labourOtAmount.toLocaleString('en-IN')}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Direct Override or Custom Total */}
-                <div className="pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-600">
-                      Calculated Wages: <strong className="text-slate-900">₹ {((parseFloat(formData.labourWorkersCount) || 1) * (parseFloat(formData.labourDailyWage) || 0) * (parseFloat(formData.labourDays) || 1)).toLocaleString('en-IN')}</strong>
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      (Workers × Wage × Days)
+                {/* Clear Summary Breakdown */}
+                <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-slate-700 font-semibold">
+                    <span>Daily wages</span>
+                    <span className="font-bold text-slate-900">₹ {labourBaseSalary.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-700 font-semibold">
+                    <span>Overtime</span>
+                    <span className="font-bold text-slate-900">₹ {labourOtAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-700 font-semibold">
+                    <span>Extra expenses</span>
+                    <span className="font-bold text-slate-900">₹ {labourExtraNum.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="pt-2 border-t border-blue-200 flex items-center justify-between">
+                    <span className="text-xs font-extrabold text-blue-950">Total Labour Expense</span>
+                    <span className="text-base font-black text-blue-950">
+                      ₹ {(labourBaseSalary + labourOtAmount + labourExtraNum).toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
@@ -1999,54 +2505,75 @@ export default function AddExpenseModal({
                 )}
               </div>
 
-              {/* Total Expense Amount Prominent Highlight */}
-              <div className={`pt-3 border-t border-slate-200 flex items-center justify-between px-4 py-3.5 rounded-xl border-2 ${
-                mainTab === 'Additional Work'
-                  ? 'bg-purple-50 border-purple-300'
-                  : 'bg-emerald-50 border-emerald-300'
-              }`}>
+              {/* Calculated Amount (For Calculation Reference & Verification) */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 border border-slate-200">
                 <div>
-                  <div className={`text-xs font-black ${mainTab === 'Additional Work' ? 'text-purple-950' : 'text-emerald-950'}`}>
-                    {mainTab === 'Additional Work' ? 'Total Additional Work Amount' : 'Total Expense Amount'}
+                  <div className="text-xs font-bold text-slate-800">
+                    Calculated Amount (Reference)
                   </div>
-                  <div className={`text-[11px] font-semibold ${mainTab === 'Additional Work' ? 'text-purple-800' : 'text-emerald-800'}`}>
+                  <div className="text-[11px] font-medium text-slate-500">
                     {mainTab === 'Additional Work'
                       ? (formData.addlPricingMode === 'metering'
                           ? `Metered Area: ${formData.additionalWorkQty || 1} ${formData.additionalWorkUnit || 'Sq.Ft'} × ₹${formData.additionalWorkRate || 0}`
-                          : 'Materials + Labour + Machinery Deployment')
+                          : 'Calculated from Breakdown')
                       : formData.category === 'Materials'
                       ? 'Material Cost + Vehicle Rental + Tips'
                       : formData.category === 'Labour'
-                      ? 'Daily Wages × Workers × Days'
+                      ? 'Salary + OT Amount + Extra Amount'
                       : formData.category === 'Rental'
                       ? 'Equipment Rate × Duration'
-                      : 'Recorded Expense Amount'}
+                      : 'Calculated Expense Amount'}
                   </div>
                 </div>
-                <span className={`text-xl font-black tracking-tight ${mainTab === 'Additional Work' ? 'text-purple-950' : 'text-emerald-950'}`}>
+                <span className="text-base font-black text-slate-800 tracking-tight">
                   ₹ {(Number(totalExpenseAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
 
-              {/* Billing Amount (Editable) */}
-              <div className="pt-2">
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  Billing Amount (Editable)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="Enter billing amount..."
-                    value={formData.billingAmount}
-                    onChange={(e) => setFormData({ ...formData, billingAmount: e.target.value })}
-                    className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
-                  />
+              {/* Actual Billing Information */}
+              <div className="pt-1 space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                    Billing Amount (Manual Entry)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
+                    <input
+                      type="number"
+                      step="any"
+                      min="1"
+                      placeholder="Enter actual bill amount (e.g. 5800)..."
+                      value={formData.billingAmount}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      onChange={(e) => setFormData({ ...formData, billingAmount: e.target.value })}
+                      className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium mt-1">
+                    Leave empty to use Calculated Amount, or enter the actual bill amount to record it as the Final Expense Amount.
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-500 font-medium mt-1">
-                  Manually enter the amount to be billed. This field should remain empty by default and must not be automatically populated.
-                </p>
+
+                {/* Final Actual Expense Amount Highlight */}
+                <div className={`flex items-center justify-between px-4 py-3.5 rounded-xl border-2 ${
+                  mainTab === 'Additional Work'
+                    ? 'bg-purple-50 border-purple-300'
+                    : 'bg-emerald-50 border-emerald-300'
+                }`}>
+                  <div>
+                    <div className={`text-xs font-black ${mainTab === 'Additional Work' ? 'text-purple-950' : 'text-emerald-950'}`}>
+                      Final Expense Amount (Recorded)
+                    </div>
+                    <div className={`text-[11px] font-semibold ${mainTab === 'Additional Work' ? 'text-purple-800' : 'text-emerald-800'}`}>
+                      {!isNaN(parsedBillingAmount) && parsedBillingAmount > 0
+                        ? 'Using manually entered Billing Amount'
+                        : 'Using Calculated Amount'}
+                    </div>
+                  </div>
+                  <span className={`text-xl font-black tracking-tight ${mainTab === 'Additional Work' ? 'text-purple-950' : 'text-emerald-950'}`}>
+                    ₹ {(Number(finalExpenseAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -2063,50 +2590,6 @@ export default function AddExpenseModal({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Payment Method Radio Selection */}
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                  Payment Method <span className="text-rose-500">*</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  {/* Cash Option */}
-                  <div
-                    onClick={() => setFormData({ ...formData, paymentMethod: 'Cash' })}
-                    className={`flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border cursor-pointer transition-all ${
-                      formData.paymentMethod === 'Cash'
-                        ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 font-bold'
-                        : 'border-slate-300 hover:border-slate-400 bg-white text-slate-700 font-medium'
-                    }`}
-                  >
-                    {formData.paymentMethod === 'Cash' ? (
-                      <CheckCircle2 size={16} className="text-emerald-600 fill-emerald-600 text-white shrink-0" />
-                    ) : (
-                      <Circle size={16} className="text-slate-400 shrink-0" />
-                    )}
-                    <Banknote size={15} />
-                    <span className="text-xs font-bold">Cash</span>
-                  </div>
-
-                  {/* UPI Option */}
-                  <div
-                    onClick={() => setFormData({ ...formData, paymentMethod: 'UPI' })}
-                    className={`flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border cursor-pointer transition-all ${
-                      formData.paymentMethod === 'UPI'
-                        ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 font-bold'
-                        : 'border-slate-300 hover:border-slate-400 bg-white text-slate-700 font-medium'
-                    }`}
-                  >
-                    {formData.paymentMethod === 'UPI' ? (
-                      <CheckCircle2 size={16} className="text-emerald-600 fill-emerald-600 text-white shrink-0" />
-                    ) : (
-                      <Circle size={16} className="text-slate-400 shrink-0" />
-                    )}
-                    <Send size={14} className="rotate-45" />
-                    <span className="text-xs font-bold">UPI</span>
-                  </div>
-                </div>
-              </div>
-
               {/* Payment Status Dropdown */}
               <div>
                 <label className="block text-xs font-bold text-slate-800 mb-1.5">
@@ -2116,7 +2599,7 @@ export default function AddExpenseModal({
                   <CheckCircle2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 pointer-events-none" />
                   <select
                     value={formData.paymentStatus}
-                    onChange={(e) => setFormData({ ...formData, paymentStatus: e.target.value })}
+                    onChange={(e) => handlePaymentStatusChange(e.target.value)}
                     className="w-full appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
                   >
                     <option value="Paid">Paid</option>
@@ -2126,7 +2609,110 @@ export default function AddExpenseModal({
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                 </div>
               </div>
+
+              {/* Payment Method Radio Selection (Disabled when Pending) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-800">
+                    Payment Method {formData.paymentStatus !== 'Pending' && <span className="text-rose-500">*</span>}
+                  </label>
+                  {formData.paymentStatus === 'Pending' && (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Disabled (Pending)
+                    </span>
+                  )}
+                </div>
+                <div className={`flex items-center gap-3 ${formData.paymentStatus === 'Pending' ? 'opacity-45 pointer-events-none select-none' : ''}`}>
+                  {/* Cash Option */}
+                  <button
+                    type="button"
+                    disabled={formData.paymentStatus === 'Pending'}
+                    onClick={() => setFormData({ ...formData, paymentMethod: 'Cash' })}
+                    className={`flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                      formData.paymentStatus !== 'Pending' && formData.paymentMethod === 'Cash'
+                        ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 font-bold'
+                        : 'border-slate-300 hover:border-slate-400 bg-white text-slate-700 font-medium'
+                    }`}
+                  >
+                    {formData.paymentStatus !== 'Pending' && formData.paymentMethod === 'Cash' ? (
+                      <CheckCircle2 size={16} className="text-emerald-600 fill-emerald-600 text-white shrink-0" />
+                    ) : (
+                      <Circle size={16} className="text-slate-400 shrink-0" />
+                    )}
+                    <Banknote size={15} />
+                    <span className="text-xs font-bold">Cash</span>
+                  </button>
+
+                  {/* UPI Option */}
+                  <button
+                    type="button"
+                    disabled={formData.paymentStatus === 'Pending'}
+                    onClick={() => setFormData({ ...formData, paymentMethod: 'UPI' })}
+                    className={`flex-1 flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer ${
+                      formData.paymentStatus !== 'Pending' && formData.paymentMethod === 'UPI'
+                        ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 font-bold'
+                        : 'border-slate-300 hover:border-slate-400 bg-white text-slate-700 font-medium'
+                    }`}
+                  >
+                    {formData.paymentStatus !== 'Pending' && formData.paymentMethod === 'UPI' ? (
+                      <CheckCircle2 size={16} className="text-emerald-600 fill-emerald-600 text-white shrink-0" />
+                    ) : (
+                      <Circle size={16} className="text-slate-400 shrink-0" />
+                    )}
+                    <Send size={14} className="rotate-45" />
+                    <span className="text-xs font-bold">UPI</span>
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Partial Payment Breakdown */}
+            {formData.paymentStatus === 'Partial' && (
+              <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-end">
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-600 mb-1">Total Billing Amount</div>
+                    <div className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-900">
+                      ₹ {finalExpenseAmount.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Amount Paid Now (₹) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="1"
+                      max={finalExpenseAmount > 1 ? finalExpenseAmount - 1 : undefined}
+                      placeholder="e.g. 3000"
+                      value={formData.partialPaidAmount}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      onChange={(e) => {
+                        setPaymentError('');
+                        setFormData({ ...formData, partialPaidAmount: e.target.value });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-blue-300 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-bold text-amber-800 mb-1">Outstanding Amount</div>
+                    <div className="px-3.5 py-2.5 bg-amber-50 border border-amber-300 rounded-xl text-xs font-black text-amber-900">
+                      ₹ {remainingOutstanding.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {paymentError && (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold">
+                <AlertTriangle size={15} className="shrink-0" />
+                <span>{paymentError}</span>
+              </div>
+            )}
 
             {/* Transaction ID & Payment Screenshot (Both Optional) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">

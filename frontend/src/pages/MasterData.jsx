@@ -25,14 +25,15 @@ import {
   Tag,
   Trash2,
   Briefcase,
-  IndianRupee,
   ShieldCheck,
+  Calendar,
 } from 'lucide-react';
 import AddClientModal from '../components/AddClientModal';
 import AddEmployeeModal from '../components/AddEmployeeModal';
 import AddMaterialModal from '../components/AddMaterialModal';
+import AddSiteModal from '../components/AddSiteModal';
 import { INITIAL_MATERIALS } from '../constants/materialsData';
-import { materialApi, clientApi, employeeApi } from '../services/api';
+import { materialApi, clientApi, employeeApi, siteApi } from '../services/api';
 
 export default function MasterData({
   materials: externalMaterials,
@@ -45,26 +46,29 @@ export default function MasterData({
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [isSiteModalOpen, setIsSiteModalOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState(null);
 
   // Materials Master Data (Shared with Godown Stock)
   const [internalMaterials, setInternalMaterials] = useState(INITIAL_MATERIALS);
   const materialsList = externalMaterials || internalMaterials;
   const setMaterialsList = externalSetMaterials || setInternalMaterials;
   const [materialStatusFilter, setMaterialStatusFilter] = useState('All'); // 'All' | 'Active' | 'Inactive'
-  const [editingPriceId, setEditingPriceId] = useState(null);
-  const [editPriceVal, setEditPriceVal] = useState('');
 
-  // Live Clients & Employees Data from MongoDB Atlas
+  // Live Clients, Employees & Sites Data from MongoDB Atlas
   const [clients, setClients] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [sites, setSites] = useState([]);
   const [loadingClients, setLoadingClients] = useState(true);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
+  const [loadingSites, setLoadingSites] = useState(true);
 
   // Load from MongoDB Atlas on mount
   useEffect(() => {
     loadMaterials();
     loadClients();
     loadEmployees();
+    loadSites();
   }, []);
 
   const loadMaterials = async () => {
@@ -78,7 +82,10 @@ export default function MasterData({
           name: m.name,
           category: m.category,
           unit: m.unit,
-          price: m.defaultPrice || 0,
+          size: m.size || '',
+          type: m.type || '',
+          brand: m.brand || '',
+          description: m.description || '',
           status: m.status || 'Active',
           stock: m.currentStock || m.stock || 0,
           img: m.imageUrl || '',
@@ -146,26 +153,85 @@ export default function MasterData({
     }
   };
 
-  // Start inline price editing
-  const handleStartEditPrice = (mat) => {
-    setEditingPriceId(mat.id);
-    setEditPriceVal(String(mat.price));
+  const loadSites = async () => {
+    try {
+      setLoadingSites(true);
+      const res = await siteApi.getAll();
+      const list = res.data || res || [];
+      const formatted = list.map((s, idx) => {
+        const budgetNum = Number(s.projectBudget ?? s.financials?.projectBudget ?? 0);
+        return {
+          ...s,
+          id: s._id || s.id || String(idx + 1).padStart(2, '0'),
+          budget: s.budget || (budgetNum > 0 ? `₹${budgetNum.toLocaleString('en-IN')}` : '₹0'),
+          projectBudget: budgetNum,
+        };
+      });
+      setSites(formatted);
+    } catch (err) {
+      console.warn('Could not fetch sites from backend:', err.message);
+      setSites([]);
+    } finally {
+      setLoadingSites(false);
+    }
   };
 
-  // Save updated master price
-  const handleSavePrice = async (id) => {
-    const numeric = parseFloat(editPriceVal);
-    if (!isNaN(numeric) && numeric >= 0) {
-      try {
-        await materialApi.update(id, { defaultPrice: numeric });
-      } catch (err) {
-        console.warn('Could not update price in DB:', err.message);
-      }
-      setMaterialsList((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, price: numeric } : m))
-      );
+  const handleAddSite = async (newSiteData) => {
+    try {
+      await siteApi.create({
+        name: newSiteData.name,
+        code: newSiteData.code,
+        client: newSiteData.client,
+        clientId: newSiteData.clientId || undefined,
+        contact: newSiteData.contact || '',
+        type: newSiteData.type,
+        location: newSiteData.location,
+        address: newSiteData.address || '',
+        startDate: newSiteData.startDate,
+        expectedDate: newSiteData.expectedDate,
+        projectBudget:
+          typeof newSiteData.projectBudget === 'number'
+            ? newSiteData.projectBudget
+            : parseFloat(String(newSiteData.budget || '').replace(/[^\d.]/g, '')) || 0,
+        status: newSiteData.status || 'Active',
+      });
+      await loadSites();
+      await loadClients();
+    } catch (err) {
+      console.warn('API create site fallback to local state:', err.message);
+      setSites((prev) => [
+        {
+          ...newSiteData,
+          id: Date.now().toString(),
+        },
+        ...prev,
+      ]);
     }
-    setEditingPriceId(null);
+  };
+
+  const handleUpdateSite = async (id, updatedSiteData) => {
+    try {
+      await siteApi.update(id, updatedSiteData);
+      await loadSites();
+      setEditingSite(null);
+    } catch (err) {
+      console.warn('API update site fallback to local state:', err.message);
+      setSites((prev) =>
+        prev.map((s) => (s._id === id || s.id === id ? { ...s, ...updatedSiteData } : s))
+      );
+      setEditingSite(null);
+    }
+  };
+
+  const handleDeleteSite = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this site?')) return;
+    try {
+      await siteApi.delete(id);
+      await loadSites();
+    } catch (err) {
+      console.warn('Could not delete site:', err.message);
+      setSites((prev) => prev.filter((s) => s.id !== id && s._id !== id));
+    }
   };
 
   // Toggle Active / Inactive status for Material
@@ -193,7 +259,9 @@ export default function MasterData({
         name: newMat.name,
         category: newMat.category || 'General',
         unit: newMat.unit || 'Bags',
-        defaultPrice: parseFloat(newMat.price) || 0,
+        size: newMat.size || '',
+        type: newMat.type || '',
+        brand: newMat.brand || '',
         status: 'Active',
         description: newMat.description || '',
       };
@@ -206,7 +274,10 @@ export default function MasterData({
           name: m.name,
           category: m.category,
           unit: m.unit,
-          price: m.defaultPrice || 0,
+          size: m.size || '',
+          type: m.type || '',
+          brand: m.brand || '',
+          description: m.description || '',
           status: m.status || 'Active',
           stock: 0,
           img: m.imageUrl || '',
@@ -223,7 +294,9 @@ export default function MasterData({
       name: newMat.name,
       category: newMat.category || 'General',
       unit: newMat.unit || 'Bags',
-      price: parseFloat(newMat.price) || 0,
+      size: newMat.size || '',
+      type: newMat.type || '',
+      brand: newMat.brand || '',
       stock: 0,
       availableQuantity: 0,
       totalPurchased: 0,
@@ -335,6 +408,13 @@ export default function MasterData({
     e.phone.includes(searchQuery)
   );
 
+  const filteredSites = sites.filter((s) =>
+    (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.client || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.location || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="p-5 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
       {/* 1. Header Banner */}
@@ -351,7 +431,7 @@ export default function MasterData({
               Master Data
             </h1>
             <p className="text-xs md:text-sm text-slate-500 mt-0.5">
-              Manage your clients, employees and construction materials in one place.
+              Manage your materials, clients, employees and construction sites in one place.
             </p>
           </div>
         </div>
@@ -370,8 +450,36 @@ export default function MasterData({
         </div>
       </div>
 
-      {/* 2. Top 3 Master Category Cards / Tabs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {/* 2. Top 4 Master Category Cards / Tabs */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Materials Tab */}
+        <button
+          onClick={() => { setActiveTab('Materials'); setSearchQuery(''); }}
+          className={`flex items-center gap-4 p-5 rounded-2xl text-left transition-all duration-300 cursor-pointer ${
+            activeTab === 'Materials'
+              ? 'bg-[#008744] text-white shadow-lg shadow-emerald-800/25 ring-2 ring-emerald-500/20'
+              : 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-100 shadow-sm'
+          }`}
+        >
+          <div
+            className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'Materials' ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-600'
+            }`}
+          >
+            <Package size={24} />
+          </div>
+          <div>
+            <div className="text-base font-bold">Materials ({materialsList.length})</div>
+            <div
+              className={`text-xs mt-0.5 ${
+                activeTab === 'Materials' ? 'text-emerald-100' : 'text-slate-400'
+              }`}
+            >
+              Material names, units & specs
+            </div>
+          </div>
+        </button>
+
         {/* Clients Tab */}
         <button
           onClick={() => { setActiveTab('Clients'); setSearchQuery(''); }}
@@ -428,30 +536,41 @@ export default function MasterData({
           </div>
         </button>
 
-        {/* Materials Tab */}
+        {/* Sites Tab */}
         <button
-          onClick={() => { setActiveTab('Materials'); setSearchQuery(''); }}
+          onClick={() => { setActiveTab('Sites'); setSearchQuery(''); }}
           className={`flex items-center gap-4 p-5 rounded-2xl text-left transition-all duration-300 cursor-pointer ${
-            activeTab === 'Materials'
+            activeTab === 'Sites'
               ? 'bg-[#008744] text-white shadow-lg shadow-emerald-800/25 ring-2 ring-emerald-500/20'
               : 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-100 shadow-sm'
           }`}
         >
           <div
             className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'Materials' ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-600'
+              activeTab === 'Sites' ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-600'
             }`}
           >
-            <Package size={24} />
+            <Building2 size={24} />
           </div>
-          <div>
-            <div className="text-base font-bold">Materials ({materialsList.length})</div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold">Sites ({sites.length})</span>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  activeTab === 'Sites'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}
+              >
+                New
+              </span>
+            </div>
             <div
               className={`text-xs mt-0.5 ${
-                activeTab === 'Materials' ? 'text-emerald-100' : 'text-slate-400'
+                activeTab === 'Sites' ? 'text-emerald-100' : 'text-slate-400'
               }`}
             >
-              Construction materials and rates
+              Construction sites & projects
             </div>
           </div>
         </button>
@@ -810,7 +929,7 @@ export default function MasterData({
                   Construction Materials Catalogue ({materialsList.length})
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Standard master rates and active availability for godown stock & billing
+                  Material names, categories, measurement units, sizes, types, and brands
                 </p>
               </div>
             </div>
@@ -830,9 +949,9 @@ export default function MasterData({
           <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl flex items-start gap-3 text-xs text-blue-900">
             <AlertCircle size={16} className="text-blue-600 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
-              <span className="font-bold">Master Pricing & Status Policy:</span>
+              <span className="font-bold">Material Catalogue & Transaction Pricing Policy:</span>
               <p className="text-[11px] text-blue-800/90 leading-relaxed">
-                The master price is used as the default price for godown stock records. Changing the master price will not change historical purchase prices of existing stock or previously recorded expenses. Inactive materials are hidden from new stock operations, while historical records remain accessible.
+                Master Data maintains material specifications (name, category, measurement unit, size, type, and brand). Material pricing is entered during actual transactions (Godown Inward, Godown Outward, and Material Expenses) because purchase and issue prices may vary. Inactive materials are hidden from new stock operations while historical records remain accessible.
               </p>
             </div>
           </div>
@@ -893,10 +1012,9 @@ export default function MasterData({
                     <th className="py-3 px-4 w-12 text-center">#</th>
                     <th className="py-3 px-4">Material Name</th>
                     <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Unit</th>
-                    <th className="py-3 px-4 text-right">Master Rate (₹)</th>
+                    <th className="py-3 px-4">Measurement Unit</th>
+                    <th className="py-3 px-4">Size / Type / Brand</th>
                     <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-center">Quick Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -907,12 +1025,14 @@ export default function MasterData({
                       const matchSearch =
                         !searchQuery ||
                         m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        (m.category && m.category.toLowerCase().includes(searchQuery.toLowerCase()));
+                        (m.category && m.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (m.brand && m.brand.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (m.type && m.type.toLowerCase().includes(searchQuery.toLowerCase()));
                       return matchStatus && matchSearch;
                     })
                     .map((mat, idx) => {
-                      const isEditingPrice = editingPriceId === mat.id;
                       const isActive = mat.status === 'Active';
+                      const specs = [mat.size, mat.type, mat.brand].filter(Boolean);
 
                       return (
                         <tr
@@ -959,42 +1079,20 @@ export default function MasterData({
                           <td className="py-3 px-4 font-medium text-slate-700">
                             {mat.unit || 'Units'}
                           </td>
-                          <td className="py-3 px-4 text-right">
-                            {isEditingPrice ? (
-                              <div className="flex items-center justify-end gap-1">
-                                <span className="text-slate-400 font-medium">₹</span>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={editPriceVal}
-                                  onChange={(e) => setEditPriceVal(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleSavePrice(mat.id);
-                                    if (e.key === 'Escape') setEditingPriceId(null);
-                                  }}
-                                  className="w-20 px-2 py-1 bg-white border-2 border-blue-500 rounded-lg text-xs font-bold text-right text-slate-900 focus:outline-none"
-                                  autoFocus
-                                />
-                                <button
-                                  onClick={() => handleSavePrice(mat.id)}
-                                  className="p-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-                                >
-                                  <Check size={12} />
-                                </button>
-                                <button
-                                  onClick={() => setEditingPriceId(null)}
-                                  className="p-1 rounded bg-slate-200 text-slate-600 hover:bg-slate-300"
-                                >
-                                  <X size={12} />
-                                </button>
+                          <td className="py-3 px-4 text-slate-600">
+                            {specs.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {specs.map((sp, i) => (
+                                  <span
+                                    key={i}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                  >
+                                    {sp}
+                                  </span>
+                                ))}
                               </div>
                             ) : (
-                              <div className="font-bold text-slate-900">
-                                ₹{Number(mat.price || 0).toLocaleString('en-IN', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}
-                              </div>
+                              <span className="text-slate-400">-</span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-center">
@@ -1014,17 +1112,6 @@ export default function MasterData({
                               <span>{isActive ? 'Active' : 'Inactive'}</span>
                             </button>
                           </td>
-                          <td className="py-3 px-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => handleStartEditPrice(mat)}
-                                className="px-2.5 py-1 rounded-lg border border-slate-200 hover:border-blue-400 text-slate-600 hover:text-blue-600 text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
-                              >
-                                <Edit2 size={11} />
-                                <span>Edit Rate</span>
-                              </button>
-                            </div>
-                          </td>
                         </tr>
                       );
                     })}
@@ -1035,7 +1122,190 @@ export default function MasterData({
         </div>
       )}
 
-      {/* 3 Add Modals */}
+      {/* ==================================== */}
+      {/* TAB 4: SITES                         */}
+      {/* ==================================== */}
+      {activeTab === 'Sites' && (
+        <div className="space-y-5">
+          {/* Action Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                Sites Master ({sites.length})
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Create construction sites and associate them with registered clients.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="relative w-72 md:w-80">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by site name, code, client..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                />
+              </div>
+
+              <button
+                onClick={() => {
+                  setEditingSite(null);
+                  setIsSiteModalOpen(true);
+                }}
+                className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/25 transition-all cursor-pointer whitespace-nowrap"
+              >
+                <Plus size={16} />
+                <span>Add Site</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-slate-500">Total Sites</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">{sites.length}</div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-emerald-700">Active</div>
+              <div className="text-2xl font-black text-emerald-700 mt-1">
+                {sites.filter((s) => s.status === 'Active').length}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-blue-700">Completed</div>
+              <div className="text-2xl font-black text-blue-700 mt-1">
+                {sites.filter((s) => s.status === 'Completed').length}
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <div className="text-xs font-bold text-amber-700">On Hold</div>
+              <div className="text-2xl font-black text-amber-700 mt-1">
+                {sites.filter((s) => s.status === 'On Hold').length}
+              </div>
+            </div>
+          </div>
+
+          {/* Sites Table */}
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+            {loadingSites ? (
+              <div className="p-12 text-center text-slate-400">
+                <Clock size={28} className="mx-auto mb-2 text-slate-300 animate-spin" />
+                <div className="font-semibold text-slate-600">Loading sites from database...</div>
+              </div>
+            ) : filteredSites.length === 0 ? (
+              <div className="p-12 text-center text-slate-400 space-y-3">
+                <Building2 size={32} className="mx-auto text-slate-300" />
+                <div className="font-bold text-slate-700 text-sm">No sites found</div>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  {searchQuery
+                    ? 'No sites match your search query.'
+                    : 'No sites registered yet. Click "Add Site" above to create your first construction project.'}
+                </p>
+                <button
+                  onClick={() => {
+                    setEditingSite(null);
+                    setIsSiteModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 bg-[#008744] text-white rounded-xl px-4 py-2 text-xs font-bold cursor-pointer hover:bg-[#00743a] transition-all"
+                >
+                  <Plus size={14} />
+                  <span>Add First Site</span>
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50/70">
+                      <th className="py-3.5 px-4">Site & Code</th>
+                      <th className="py-3.5 px-4">Client & Contact</th>
+                      <th className="py-3.5 px-4">Type & Location</th>
+                      <th className="py-3.5 px-4 text-right">Contract Budget (₹)</th>
+                      <th className="py-3.5 px-4 text-center">Status</th>
+                      <th className="py-3.5 px-4 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredSites.map((site) => (
+                      <tr key={site.id || site._id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                              <Building2 size={16} />
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-900 text-xs">{site.name}</div>
+                              <span className="text-[10px] font-mono text-slate-500 font-semibold">
+                                {site.code}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-800">{site.client}</div>
+                          <div className="text-[10px] text-slate-400">{site.contact || '-'}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-slate-700">{site.type || 'New Building'}</div>
+                          <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                            <MapPin size={10} />
+                            <span>{site.location || 'Chennai'}</span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-bold text-slate-900">
+                          {site.budget || `₹${Number(site.projectBudget || 0).toLocaleString('en-IN')}`}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          {site.status === 'Active' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>Active</span>
+                            </span>
+                          ) : site.status === 'Completed' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
+                              <CheckCircle2 size={10} />
+                              <span>Completed</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                              <Clock size={10} />
+                              <span>{site.status}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setEditingSite(site)}
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-amber-600 hover:border-amber-200 hover:bg-amber-50/50 transition-colors cursor-pointer"
+                              title="Edit site"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSite(site.id || site._id)}
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors cursor-pointer"
+                              title="Delete site"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4 Add/Edit Modals */}
       <AddClientModal
         isOpen={isClientModalOpen}
         onClose={() => setIsClientModalOpen(false)}
@@ -1052,6 +1322,17 @@ export default function MasterData({
         isOpen={isMaterialModalOpen}
         onClose={() => setIsMaterialModalOpen(false)}
         onSaveMaterial={handleSaveMaterial}
+      />
+
+      <AddSiteModal
+        isOpen={isSiteModalOpen || !!editingSite}
+        siteToEdit={editingSite}
+        onClose={() => {
+          setIsSiteModalOpen(false);
+          setEditingSite(null);
+        }}
+        onAddSite={handleAddSite}
+        onUpdateSite={handleUpdateSite}
       />
     </div>
   );

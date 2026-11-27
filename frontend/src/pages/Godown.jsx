@@ -23,9 +23,12 @@ import {
   Calendar,
   Filter,
 } from 'lucide-react';
-import AddStockInwardModal from '../components/AddStockInwardModal';
-import IssueStockModal from '../components/IssueStockModal';
-import { INITIAL_MATERIALS } from '../constants/materialsData';
+import GodownStockActionModal from '../components/GodownStockActionModal';
+import {
+  INITIAL_MATERIALS,
+  getConsolidatedMaterialName,
+  getMaterialConfig,
+} from '../constants/materialsData';
 import { godownApi, siteApi, materialApi } from '../services/api';
 
 export default function Godown({
@@ -39,10 +42,14 @@ export default function Godown({
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  // Modals state
-  const [isInwardModalOpen, setIsInwardModalOpen] = useState(false);
-  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+  // Combined Inward / Outward Modal state
+  const [isActionModalOpen, setIsActionModalOpen] = useState(false);
   const [selectedMaterialForAction, setSelectedMaterialForAction] = useState(null);
+
+  const handleOpenMaterialModal = (materialItem) => {
+    setSelectedMaterialForAction(materialItem);
+    setIsActionModalOpen(true);
+  };
 
   // Construction Sites (for Issue modal)
   const [sites, setSites] = useState([]);
@@ -68,22 +75,48 @@ export default function Godown({
       ]);
 
       if (stocksRes.status === 'fulfilled' && stocksRes.value?.data?.length > 0) {
-        const stocks = stocksRes.value.data.map((s) => ({
-          id: s.materialId || s.stockId,
-          _id: s.materialId,
-          code: s.code,
-          name: s.name,
-          category: s.category,
-          unit: s.unit,
-          price: s.defaultPrice || 0,
-          stock: s.currentStock,
-          availableQuantity: s.currentStock,
-          minStockLevel: s.reorderLevel || 10,
-          minStock: s.reorderLevel || 10,
-          status: s.status || 'Active',
-          image: s.imageUrl || 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
-        }));
-        setRawMaterials(stocks);
+        const consolidatedMap = new Map();
+
+        stocksRes.value.data.forEach((s) => {
+          if (s.status === 'Inactive') return;
+          const parentName = getConsolidatedMaterialName(s.name, s.category);
+          const cfg = getMaterialConfig(parentName, s.category, s.unit);
+          const defaultUnit = cfg.units[0] || s.unit || 'Units';
+          const fallbackInit = INITIAL_MATERIALS.find(
+            (im) => im.name.toLowerCase() === parentName.toLowerCase()
+          );
+
+          if (consolidatedMap.has(parentName)) {
+            const existing = consolidatedMap.get(parentName);
+            existing.stock += s.currentStock || 0;
+            existing.availableQuantity += s.currentStock || 0;
+            existing.minStockLevel = Math.max(existing.minStockLevel, s.reorderLevel || 10);
+            existing.minStock = existing.minStockLevel;
+          } else {
+            consolidatedMap.set(parentName, {
+              id: s.materialId || s.stockId,
+              _id: s.materialId,
+              code: s.code,
+              name: parentName,
+              category: fallbackInit?.category || s.category,
+              unit: defaultUnit,
+              price: s.defaultPrice || fallbackInit?.price || 0,
+              stock: s.currentStock || 0,
+              availableQuantity: s.currentStock || 0,
+              minStockLevel: s.reorderLevel || 10,
+              minStock: s.reorderLevel || 10,
+              status: s.status || 'Active',
+              image:
+                fallbackInit?.image ||
+                s.imageUrl ||
+                'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
+            });
+          }
+        });
+
+        if (consolidatedMap.size > 0) {
+          setRawMaterials(Array.from(consolidatedMap.values()));
+        }
       }
 
       if (movementsRes.status === 'fulfilled') {
@@ -93,10 +126,16 @@ export default function Godown({
             moves.map((m, idx) => ({
               id: m._id ? `MOV-${m._id.slice(-4)}` : `MOV-${idx + 1}`,
               type: m.movementType || 'INWARD',
-              materialName: m.material?.name || m.materialName || 'Material',
+              materialName: getConsolidatedMaterialName(
+                m.material?.name || m.materialName || 'Material',
+                m.material?.category || m.category || ''
+              ),
               category: m.material?.category || m.category || 'General',
               quantity: m.quantity || 0,
               unit: m.unit || m.material?.unit || 'Units',
+              unitPrice: m.unitPrice || 0,
+              totalAmount: m.totalAmount || (m.quantity || 0) * (m.unitPrice || 0),
+              variantLabel: [m.variantType, m.variantSize, m.variantBrand].filter(Boolean).join(' • '),
               siteName: m.site?.name ? `${m.site.name} (${m.site.code || ''})` : (m.movementType === 'INWARD' ? 'Main Yard Godown' : 'Site'),
               date: m.date ? new Date(m.date).toLocaleDateString('en-IN') : 'Recent',
               issuedTo: m.receivedBy || m.supplierName || 'Supervisor',
@@ -217,17 +256,18 @@ export default function Godown({
       (m) => m.name.toLowerCase() === inwardData.materialName.toLowerCase()
     );
 
-    const addQty = parseFloat(inwardData.quantity) || 0;
+    const addQty = Number(inwardData.quantity) || 0;
+    const unitPrice = Number(inwardData.unitPrice) || 0;
 
     try {
-      let materialId = existing?._id || existing?.id;
+      let materialId = inwardData.materialId || existing?._id || existing?.id;
       if (!materialId || String(materialId).startsWith('MAT-')) {
         // Create material in master catalog first if not already saved in MongoDB
         const newMatRes = await materialApi.create({
           name: inwardData.materialName,
           category: inwardData.category || 'General',
           unit: inwardData.unit || 'Bags',
-          defaultPrice: inwardData.price || 0,
+          defaultPrice: unitPrice,
         }).catch(() => null);
         if (newMatRes?.data?._id) {
           materialId = newMatRes.data._id;
@@ -239,8 +279,11 @@ export default function Godown({
           materialId,
           quantity: addQty,
           unit: inwardData.unit,
-          unitPrice: inwardData.price || 0,
-          supplierName: 'Godown Inward Desk',
+          unitPrice,
+          variantType: inwardData.variantType || '',
+          variantSize: inwardData.variantSize || '',
+          variantBrand: inwardData.variantBrand || '',
+          supplierName: inwardData.supplierName || 'Direct Vendor',
           notes: inwardData.remarks || 'Stock received in godown',
           date: inwardData.date,
         });
@@ -249,6 +292,9 @@ export default function Godown({
       }
     } catch (err) {
       console.warn('API godown inward fallback:', err.message);
+      if (err.status === 400) {
+        throw err;
+      }
     }
 
     // Fallback local update
@@ -259,38 +305,19 @@ export default function Godown({
     if (existingIndex >= 0) {
       setRawMaterials((prev) => {
         const updated = [...prev];
-        const existing = updated[existingIndex];
-        const currentQty = existing.availableQuantity ?? existing.stock ?? 0;
-        const newPurchased = (existing.totalPurchased || 0) + addQty;
+        const existingItem = updated[existingIndex];
+        const currentQty = existingItem.availableQuantity ?? existingItem.stock ?? 0;
+        const newPurchased = (existingItem.totalPurchased || 0) + addQty;
         const newAvailable = currentQty + addQty;
 
         updated[existingIndex] = {
-          ...existing,
+          ...existingItem,
           totalPurchased: newPurchased,
           availableQuantity: newAvailable,
           stock: newAvailable,
         };
         return updated;
       });
-    } else {
-      const newMat = {
-        id: `MAT-${Date.now().toString().slice(-4)}`,
-        name: inwardData.materialName,
-        category: inwardData.category || 'General',
-        unit: inwardData.unit || 'Bags',
-        price: inwardData.price || 0,
-        totalPurchased: addQty,
-        totalIssued: 0,
-        availableQuantity: addQty,
-        stock: addQty,
-        minStockLevel: inwardData.minStockLevel || 10,
-        minStock: inwardData.minStockLevel || 10,
-        status: 'Active',
-        image:
-          'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80',
-        description: 'New stock added directly via Godown inward.',
-      };
-      setRawMaterials((prev) => [newMat, ...prev]);
     }
 
     const newMovement = {
@@ -300,9 +327,14 @@ export default function Godown({
       category: inwardData.category || 'General',
       quantity: addQty,
       unit: inwardData.unit || 'Units',
+      unitPrice,
+      totalAmount: addQty * unitPrice,
+      variantLabel: [inwardData.variantType, inwardData.variantSize, inwardData.variantBrand]
+        .filter(Boolean)
+        .join(' • '),
       siteName: 'Main Yard Godown',
       date: inwardData.date || new Date().toISOString().split('T')[0],
-      issuedTo: 'Godown Inward Desk',
+      issuedTo: inwardData.supplierName || 'Godown Inward Desk',
       remarks: inwardData.remarks || 'Stock added to warehouse',
     };
     setRecentMovements((prev) => [newMovement, ...prev]);
@@ -314,8 +346,9 @@ export default function Godown({
       (m) => m.name.toLowerCase() === issueData.materialName.toLowerCase()
     );
 
-    const issueQty = parseFloat(issueData.quantity) || 0;
-    const materialId = existing?._id || existing?.id;
+    const issueQty = Number(issueData.quantity) || 0;
+    const unitPrice = Number(issueData.unitPrice) || 0;
+    const materialId = issueData.materialId || existing?._id || existing?.id;
     const targetSite =
       sites.find(
         (s) =>
@@ -330,6 +363,11 @@ export default function Godown({
           materialId,
           siteId: targetSite._id,
           quantity: issueQty,
+          unit: issueData.unit,
+          unitPrice,
+          variantType: issueData.variantType || '',
+          variantSize: issueData.variantSize || '',
+          variantBrand: issueData.variantBrand || '',
           receivedBy: issueData.issuedTo || 'Site Incharge',
           notes: issueData.remarks || `Dispatched to ${targetSite.name}`,
           date: issueData.date,
@@ -339,6 +377,9 @@ export default function Godown({
       }
     } catch (err) {
       console.warn('API godown outward fallback:', err.message);
+      if (err.status === 400) {
+        throw err;
+      }
     }
 
     // Fallback local update
@@ -349,13 +390,13 @@ export default function Godown({
     if (existingIndex >= 0) {
       setRawMaterials((prev) => {
         const updated = [...prev];
-        const existing = updated[existingIndex];
-        const currentQty = existing.availableQuantity ?? existing.stock ?? 0;
-        const newIssued = (existing.totalIssued || 0) + issueQty;
+        const existingItem = updated[existingIndex];
+        const currentQty = existingItem.availableQuantity ?? existingItem.stock ?? 0;
+        const newIssued = (existingItem.totalIssued || 0) + issueQty;
         const newAvailable = Math.max(0, currentQty - issueQty);
 
         updated[existingIndex] = {
-          ...existing,
+          ...existingItem,
           totalIssued: newIssued,
           availableQuantity: newAvailable,
           stock: newAvailable,
@@ -371,6 +412,11 @@ export default function Godown({
       category: issueData.category || 'General',
       quantity: issueQty,
       unit: issueData.unit || 'Units',
+      unitPrice,
+      totalAmount: issueQty * unitPrice,
+      variantLabel: [issueData.variantType, issueData.variantSize, issueData.variantBrand]
+        .filter(Boolean)
+        .join(' • '),
       siteName: issueData.siteName || issueData.projectLabel || 'Site',
       date: issueData.date || new Date().toISOString().split('T')[0],
       issuedTo: issueData.issuedTo || 'Site Incharge',
@@ -379,7 +425,7 @@ export default function Godown({
     setRecentMovements((prev) => [newMovement, ...prev]);
   };
 
-  // Render individual card: Full background image + hover reveals Inward & Outward buttons
+  // Render individual card: Two equal square sections (Left: Image, Right: Name, Stock & Unit)
   const renderStockCard = (item) => {
     const currentQty = item.availableQuantity ?? item.stock ?? 0;
     const minLevel = item.minStockLevel ?? item.minStock ?? 10;
@@ -388,111 +434,76 @@ export default function Godown({
     return (
       <div
         key={item.id}
-        className="relative overflow-hidden rounded-2xl min-h-[155px] flex flex-col justify-between p-4 group border border-slate-700/40 shadow-sm hover:shadow-xl transition-all duration-300 bg-slate-900"
+        role="button"
+        tabIndex={0}
+        onClick={() => handleOpenMaterialModal(item)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleOpenMaterialModal(item);
+          }
+        }}
+        className="grid grid-cols-2 rounded-2xl overflow-hidden bg-white border border-slate-200 hover:border-emerald-400 shadow-xs hover:shadow-lg transition-all duration-200 cursor-pointer group focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
       >
-        {/* Full Image Background */}
-        <img
-          src={item.image}
-          alt={item.name}
-          className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-500 ease-out"
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src =
-              'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80';
-          }}
-        />
+        {/* Left Square Section: Material Image */}
+        <div className="relative aspect-square w-full bg-slate-100 overflow-hidden border-r border-slate-100">
+          <img
+            src={item.image}
+            alt={item.name}
+            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300 ease-out"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src =
+                'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=600&q=80';
+            }}
+          />
+        </div>
 
-        {/* Gradient Overlay for high-contrast text */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/95 via-slate-950/65 to-slate-950/45 group-hover:from-slate-950/98 group-hover:via-slate-950/80 transition-all duration-300 pointer-events-none" />
-
-        {/* Top Badges */}
-        <div className="relative z-10 flex items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md text-white border border-white/20 shadow-xs">
-            {item.category}
-          </span>
-          <span
-            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold backdrop-blur-md shadow-xs ${
-              item.status === 'Inactive'
-                ? 'bg-rose-950/85 text-rose-300 border border-rose-500/40'
-                : status === 'In Stock'
-                ? 'bg-emerald-950/85 text-emerald-300 border border-emerald-500/40'
-                : status === 'Low Stock'
-                ? 'bg-amber-950/85 text-amber-300 border border-amber-500/40'
-                : 'bg-rose-950/85 text-rose-300 border border-rose-500/40'
-            }`}
-          >
+        {/* Right Square Section: Material Name, Available Stock & Unit */}
+        <div className="aspect-square w-full p-3.5 flex flex-col justify-between bg-white min-w-0">
+          <div className="flex items-center justify-between gap-1">
+            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 truncate">
+              {item.category}
+            </span>
             <span
-              className={`w-1.5 h-1.5 rounded-full ${
+              className={`w-2 h-2 rounded-full shrink-0 ${
                 item.status === 'Inactive'
-                  ? 'bg-rose-400'
+                  ? 'bg-rose-500'
                   : status === 'In Stock'
-                  ? 'bg-emerald-400'
+                  ? 'bg-emerald-500'
                   : status === 'Low Stock'
-                  ? 'bg-amber-400'
-                  : 'bg-rose-400'
+                  ? 'bg-amber-500'
+                  : 'bg-rose-500'
               }`}
+              title={status}
             />
-            {item.status === 'Inactive' ? 'Inactive' : status === 'In Stock' ? 'Available' : status}
-          </span>
-        </div>
-
-        {/* Bottom Info: Material Name & Current Stock ONLY */}
-        <div className="relative z-10 pt-4">
-          <h3
-            className="text-white font-extrabold text-sm md:text-base tracking-tight truncate drop-shadow-sm"
-            title={item.name}
-          >
-            {item.name}
-          </h3>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">
-              Current Stock
-            </span>
-            <span
-              className={`text-sm md:text-base font-black ${
-                currentQty > 0 ? 'text-emerald-300' : 'text-rose-400'
-              }`}
-            >
-              {currentQty.toLocaleString('en-IN')}{' '}
-              <span className="text-xs font-bold text-slate-200">{item.unit}</span>
-            </span>
           </div>
-        </div>
 
-        {/* Hover Action Overlay: Inward & Outward Buttons */}
-        <div className="absolute inset-0 z-20 bg-slate-950/88 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-all duration-200 flex flex-col items-center justify-center gap-2 p-3">
-          <span className="text-xs font-extrabold text-white text-center truncate max-w-full px-1">
-            {item.name}
-          </span>
-          <div className="flex items-center gap-2 w-full justify-center">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedMaterialForAction(item);
-                setIsInwardModalOpen(true);
-              }}
-              disabled={item.status === 'Inactive'}
-              className="flex-1 max-w-[110px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none text-white text-[11px] font-extrabold shadow-lg transition-transform active:scale-95 cursor-pointer"
-              title="Stock Inward"
+          <div className="my-auto py-1">
+            <h3
+              className="text-slate-900 font-extrabold text-sm md:text-[15px] leading-snug line-clamp-2 group-hover:text-emerald-700 transition-colors"
+              title={item.name}
             >
-              <ArrowDownLeft size={14} />
-              <span>+ Inward</span>
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedMaterialForAction(item);
-                setIsIssueModalOpen(true);
-              }}
-              disabled={item.status === 'Inactive' || currentQty <= 0}
-              className="flex-1 max-w-[110px] flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:pointer-events-none text-white text-[11px] font-extrabold shadow-lg transition-transform active:scale-95 cursor-pointer"
-              title="Issue Stock (Outward)"
-            >
-              <ArrowUpRight size={14} />
-              <span>→ Issue</span>
-            </button>
+              {item.name}
+            </h3>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Available Stock
+            </div>
+            <div className="flex items-baseline gap-1 mt-0.5 flex-wrap">
+              <span
+                className={`text-base md:text-lg font-black leading-none ${
+                  currentQty > 0 ? 'text-emerald-700' : 'text-rose-600'
+                }`}
+              >
+                {currentQty.toLocaleString('en-IN')}
+              </span>
+              <span className="text-xs font-bold text-slate-600 truncate">
+                {item.unit}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -501,7 +512,7 @@ export default function Godown({
 
   return (
     <div className="p-4 md:p-7 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
-      {/* 1. Header Banner & Quick Action Buttons */}
+      {/* 1. Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-3xl border border-slate-200/80 p-5 md:p-6 shadow-xs">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0 shadow-2xs">
@@ -517,34 +528,14 @@ export default function Godown({
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Live material stock count and site dispatch tracking.
+              Click any material card to record Inward stock or Outward site dispatch.
             </p>
           </div>
         </div>
 
-        {/* Action Buttons: Stock Inward & Issue Stock */}
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <button
-            onClick={() => {
-              setSelectedMaterialForAction(null);
-              setIsInwardModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-4 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/20 transition-all cursor-pointer whitespace-nowrap"
-          >
-            <ArrowDownLeft size={16} />
-            <span>Stock Inward</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setSelectedMaterialForAction(null);
-              setIsIssueModalOpen(true);
-            }}
-            className="flex items-center gap-2 bg-[#0072ff] hover:bg-blue-600 text-white rounded-xl px-4 py-2.5 text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer whitespace-nowrap"
-          >
-            <ArrowUpRight size={16} />
-            <span>Issue Stock (Outward)</span>
-          </button>
+        <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 self-start sm:self-auto">
+          <Package size={15} className="text-emerald-600" />
+          <span>Select a material card to transact</span>
         </div>
       </div>
 
@@ -916,36 +907,14 @@ export default function Godown({
 
                           {/* Quick Actions */}
                           <td className="py-3.5 px-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => {
-                                  setSelectedMaterialForAction(item);
-                                  setIsInwardModalOpen(true);
-                                }}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:text-emerald-800 hover:border-emerald-300 hover:bg-emerald-50 transition-colors text-xs font-bold cursor-pointer"
-                                title="Inward Stock"
-                              >
-                                <ArrowDownLeft size={13} className="text-emerald-600" />
-                                <span>Inward</span>
-                              </button>
-
-                              <button
-                                onClick={() => {
-                                  setSelectedMaterialForAction(item);
-                                  setIsIssueModalOpen(true);
-                                }}
-                                disabled={item.availableQuantity <= 0}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
-                                  item.availableQuantity <= 0
-                                    ? 'border-slate-200 text-slate-300 cursor-not-allowed bg-slate-50'
-                                    : 'border-slate-300 text-slate-700 hover:text-blue-800 hover:border-blue-300 hover:bg-blue-50'
-                                }`}
-                                title="Issue Stock to Site"
-                              >
-                                <ArrowUpRight size={13} className="text-blue-600" />
-                                <span>Issue</span>
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenMaterialModal(item)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:text-emerald-800 hover:border-emerald-400 hover:bg-emerald-50 transition-colors text-xs font-bold cursor-pointer"
+                            >
+                              <ArrowDownLeft size={13} className="text-emerald-600" />
+                              <span>Inward / Outward</span>
+                            </button>
                           </td>
                         </tr>
                       );
@@ -1029,6 +998,8 @@ export default function Godown({
                   <th className="py-3.5 px-4">Type</th>
                   <th className="py-3.5 px-4">Material</th>
                   <th className="py-3.5 px-4 text-right">Quantity</th>
+                  <th className="py-3.5 px-4 text-right">Unit Price</th>
+                  <th className="py-3.5 px-4 text-right">Total Amount</th>
                   <th className="py-3.5 px-4">Destination / Source</th>
                   <th className="py-3.5 px-4">Date</th>
                   <th className="py-3.5 px-4">Handled By</th>
@@ -1038,7 +1009,7 @@ export default function Godown({
               <tbody className="divide-y divide-slate-100">
                 {recentMovements.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="py-12 text-center text-slate-400">
+                    <td colSpan="10" className="py-12 text-center text-slate-400">
                       <History size={32} className="mx-auto mb-2 text-slate-300" />
                       <div className="font-bold text-slate-700 text-sm">
                         No stock movements recorded yet
@@ -1067,14 +1038,23 @@ export default function Godown({
                         </span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 font-extrabold text-slate-900">
-                      {mov.materialName}
+                    <td className="py-3.5 px-4">
+                      <div className="font-extrabold text-slate-900">{mov.materialName}</div>
+                      {mov.variantLabel && (
+                        <div className="text-[10px] font-semibold text-slate-500">{mov.variantLabel}</div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <span className="font-black text-slate-950">
                         {mov.type === 'INWARD' ? `+${mov.quantity}` : `-${mov.quantity}`}
                       </span>{' '}
                       <span className="text-[11px] font-bold text-slate-600">{mov.unit}</span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-bold text-slate-700">
+                      ₹{(mov.unitPrice || 0).toLocaleString('en-IN')}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-black text-slate-900">
+                      ₹{(mov.totalAmount || 0).toLocaleString('en-IN')}
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-slate-800">
                       <div className="flex items-center gap-1.5">
@@ -1102,29 +1082,17 @@ export default function Godown({
         </div>
       )}
 
-      {/* Modals - Passing only Active materials for new stock operations */}
-      <AddStockInwardModal
-        isOpen={isInwardModalOpen}
+      {/* Combined Inward & Outward Modal (Locked to Clicked Material) */}
+      <GodownStockActionModal
+        isOpen={isActionModalOpen}
         onClose={() => {
-          setIsInwardModalOpen(false);
+          setIsActionModalOpen(false);
           setSelectedMaterialForAction(null);
         }}
-        onSaveInward={handleSaveInward}
-        initialMaterial={selectedMaterialForAction}
-        materials={inventory.filter((m) => m.status !== 'Inactive')}
-        categories={categories}
-      />
-
-      <IssueStockModal
-        isOpen={isIssueModalOpen}
-        onClose={() => {
-          setIsIssueModalOpen(false);
-          setSelectedMaterialForAction(null);
-        }}
-        onIssueStock={handleIssueStock}
-        initialMaterial={selectedMaterialForAction}
-        materials={inventory.filter((m) => m.status !== 'Inactive')}
+        material={selectedMaterialForAction}
         sites={sites}
+        onSaveInward={handleSaveInward}
+        onIssueStock={handleIssueStock}
       />
     </div>
   );

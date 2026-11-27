@@ -18,7 +18,10 @@ import {
   FileText,
   Image as ImageIcon,
 } from 'lucide-react';
-import { LABOUR_WORKER_TYPES } from '../constants/constructionData';
+import {
+  LABOUR_WORKER_TYPES,
+  CONTRACT_WORK_TYPES,
+} from '../constants/constructionData';
 import { siteApi } from '../services/api';
 
 export default function AddLabourModal({
@@ -28,16 +31,23 @@ export default function AddLabourModal({
   workerToEdit = null,
   onUpdateLabour = null,
 }) {
+  const [activeTab, setActiveTab] = useState('Daily Wage'); // 'Daily Wage' | 'Labour Contract'
   const [sitesList, setSitesList] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
     labourType: 'Mason',
+    contractWorkType: '',
     assignedSite: '',
     siteId: '',
     dailyWage: '1000',
     otRate: '100',
     joiningDate: new Date().toISOString().split('T')[0],
+    totalAreaSqft: '',
+    ratePerSqft: '',
+    contractStartDate: new Date().toISOString().split('T')[0],
+    expectedCompletionDate: '',
+    scopeNotes: '',
     status: 'Active',
     address: '',
     aadhaarNumber: '',
@@ -48,15 +58,25 @@ export default function AddLabourModal({
   useEffect(() => {
     if (isOpen) {
       if (workerToEdit) {
+        const isContract = workerToEdit.engagementType === 'Labour Contract';
+        setActiveTab(isContract ? 'Labour Contract' : 'Daily Wage');
         setFormData({
           name: workerToEdit.name || '',
           phone: workerToEdit.phone || '',
           labourType: workerToEdit.workerType || workerToEdit.labourType || workerToEdit.type || 'Mason',
-          assignedSite: workerToEdit.siteName ? `${workerToEdit.siteName} (${workerToEdit.siteCode || ''})` : '',
+          contractWorkType: workerToEdit.contractWorkType || (isContract ? workerToEdit.workerType : '') || '',
+          assignedSite: workerToEdit.siteName && workerToEdit.siteName !== 'Unassigned'
+            ? `${workerToEdit.siteName} (${workerToEdit.siteCode || ''})`
+            : '',
           siteId: workerToEdit.currentSite?._id || workerToEdit.currentSite || workerToEdit.siteId || '',
           dailyWage: String(workerToEdit.dailyWageNum ?? (typeof workerToEdit.dailyWage === 'number' ? workerToEdit.dailyWage : parseFloat(String(workerToEdit.dailyWage || '').replace(/[^\d.]/g, '')) || 1000)),
           otRate: String(workerToEdit.overtimeRate ?? (typeof workerToEdit.otRate === 'number' ? workerToEdit.otRate : parseFloat(String(workerToEdit.otRate || '').replace(/[^\d.]/g, '')) || 100)),
           joiningDate: workerToEdit.joiningDate && !isNaN(new Date(workerToEdit.joiningDate).getTime()) ? new Date(workerToEdit.joiningDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          totalAreaSqft: workerToEdit.totalAreaSqft ? String(workerToEdit.totalAreaSqft) : '',
+          ratePerSqft: workerToEdit.ratePerSqft ? String(workerToEdit.ratePerSqft) : '',
+          contractStartDate: workerToEdit.contractStartDate && !isNaN(new Date(workerToEdit.contractStartDate).getTime()) ? new Date(workerToEdit.contractStartDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          expectedCompletionDate: workerToEdit.expectedCompletionDate && !isNaN(new Date(workerToEdit.expectedCompletionDate).getTime()) ? new Date(workerToEdit.expectedCompletionDate).toISOString().split('T')[0] : '',
+          scopeNotes: workerToEdit.scopeNotes || '',
           status: workerToEdit.status || 'Active',
           address: workerToEdit.address || '',
           aadhaarNumber: workerToEdit.aadhaarNumber || '',
@@ -64,15 +84,22 @@ export default function AddLabourModal({
           photo: workerToEdit.photoUrl || workerToEdit.avatar || '',
         });
       } else {
+        setActiveTab('Daily Wage');
         setFormData({
           name: '',
           phone: '',
           labourType: 'Mason',
+          contractWorkType: '',
           assignedSite: '',
           siteId: '',
           dailyWage: '1000',
           otRate: '100',
           joiningDate: new Date().toISOString().split('T')[0],
+          totalAreaSqft: '',
+          ratePerSqft: '',
+          contractStartDate: new Date().toISOString().split('T')[0],
+          expectedCompletionDate: '',
+          scopeNotes: '',
           status: 'Active',
           address: '',
           aadhaarNumber: '',
@@ -128,18 +155,35 @@ export default function AddLabourModal({
       formData.photo.trim() ||
       defaultAvatars[Math.floor(Math.random() * defaultAvatars.length)];
 
+    const isContract = activeTab === 'Labour Contract';
+    const areaNum = parseFloat(formData.totalAreaSqft) || 0;
+    const ratePerSqftNum = parseFloat(formData.ratePerSqft) || 0;
+    const totalContractAmount = Math.round(areaNum * ratePerSqftNum);
+
+    if (isContract && (!formData.contractWorkType || areaNum <= 0 || ratePerSqftNum <= 0)) {
+      return;
+    }
+
     const workerPayload = {
+      engagementType: isContract ? 'Labour Contract' : 'Daily Wage',
       name: formData.name,
       phone: formData.phone || '+91 98765 43210',
-      labourType: formData.labourType,
-      workerType: formData.labourType,
+      labourType: isContract ? formData.contractWorkType : formData.labourType,
+      workerType: isContract ? formData.contractWorkType : formData.labourType,
+      contractWorkType: isContract ? formData.contractWorkType : '',
       currentSite: siteId || null,
       siteId: siteId || null,
       siteName: siteName,
       siteCode: siteCode,
-      dailyWage: parseFloat(formData.dailyWage) || 800,
-      overtimeRate: parseFloat(formData.otRate) || 100,
+      dailyWage: isContract ? 0 : parseFloat(formData.dailyWage) || 800,
+      overtimeRate: isContract ? 0 : parseFloat(formData.otRate) || 100,
       joiningDate: formData.joiningDate || new Date().toISOString(),
+      totalAreaSqft: isContract ? areaNum : 0,
+      ratePerSqft: isContract ? ratePerSqftNum : 0,
+      totalContractAmount: isContract ? totalContractAmount : 0,
+      contractStartDate: isContract ? formData.contractStartDate || new Date().toISOString() : null,
+      expectedCompletionDate: isContract && formData.expectedCompletionDate ? formData.expectedCompletionDate : null,
+      scopeNotes: isContract ? formData.scopeNotes || '' : '',
       status: formData.status || 'Active',
       address: formData.address || '',
       aadhaarNumber: formData.aadhaarNumber || '',
@@ -184,12 +228,16 @@ export default function AddLabourModal({
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900">
-                {workerToEdit ? 'Edit Labour Worker' : 'Add New Labour'}
+                {workerToEdit
+                  ? activeTab === 'Labour Contract'
+                    ? 'Edit Labour Contractor'
+                    : 'Edit Labour Worker'
+                  : 'Add New Labour'}
               </h2>
               <p className="text-xs text-slate-500">
                 {workerToEdit
-                  ? 'Update worker details, wages, KYC, and site assignment.'
-                  : 'Register a new worker with wage, KYC details, address, and site assignment.'}
+                  ? 'Update details, rates, KYC, and site assignment.'
+                  : 'Register a daily wage worker or labour contractor.'}
               </p>
             </div>
           </div>
@@ -201,20 +249,51 @@ export default function AddLabourModal({
           </button>
         </div>
 
+        {/* Two Registration Tabs: Daily Wage Labour vs Labour Contract */}
+        <div className="px-6 pt-4 pb-2 bg-slate-50/70 border-b border-slate-100">
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-200/70 rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab('Daily Wage')}
+              className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === 'Daily Wage'
+                  ? 'bg-white text-emerald-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <HardHat size={14} />
+              <span>Daily Wage Labour</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('Labour Contract')}
+              className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                activeTab === 'Labour Contract'
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Briefcase size={14} />
+              <span>Labour Contract</span>
+            </button>
+          </div>
+        </div>
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-          {/* Row 1: Worker Name & Phone */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[72vh] overflow-y-auto">
+          {/* Row 1: Worker/Contractor Name & Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Worker Name <span className="text-rose-500">*</span>
+                {activeTab === 'Labour Contract' ? 'Contractor Name' : 'Worker Name'}{' '}
+                <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Kumar M"
+                  placeholder={activeTab === 'Labour Contract' ? 'e.g. Ravi Construction' : 'e.g. Kumar M'}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
@@ -240,27 +319,51 @@ export default function AddLabourModal({
             </div>
           </div>
 
-          {/* Row 2: Labour Type & Assigned Site */}
+          {/* Row 2: Labour/Contract Work Type & Assigned Site */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Labour Type <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <select
-                  value={formData.labourType}
-                  onChange={(e) => setFormData({ ...formData, labourType: e.target.value })}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                >
-                  {LABOUR_WORKER_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
+            {activeTab === 'Labour Contract' ? (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Contract Work Type <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <select
+                    required
+                    value={formData.contractWorkType}
+                    onChange={(e) => setFormData({ ...formData, contractWorkType: e.target.value })}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  >
+                    <option value="">Select work type</option>
+                    {CONTRACT_WORK_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Labour Type <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <select
+                    value={formData.labourType}
+                    onChange={(e) => setFormData({ ...formData, labourType: e.target.value })}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  >
+                    {LABOUR_WORKER_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -347,17 +450,18 @@ export default function AddLabourModal({
             </div>
           </div>
 
-          {/* Row 5: Labour Photo */}
+          {/* Row 5: Photo URL */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Labour Photo URL <span className="text-slate-400 font-normal">(Optional / Auto-generates avatar)</span>
+              {activeTab === 'Labour Contract' ? 'Contractor Photo URL' : 'Labour Photo URL'}{' '}
+              <span className="text-slate-400 font-normal">(Optional)</span>
             </label>
             <div className="flex items-center gap-3">
               <div className="relative flex-1">
                 <ImageIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="https://... (or leave blank for standard worker avatar)"
+                  placeholder="https://... (or leave blank for standard avatar)"
                   value={formData.photo}
                   onChange={(e) => setFormData({ ...formData, photo: e.target.value })}
                   className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
@@ -382,55 +486,172 @@ export default function AddLabourModal({
             </div>
           </div>
 
-          {/* Row 6: Daily Wage, OT Rate, Joining Date */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Daily Wage (₹) <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="1000"
-                  value={formData.dailyWage}
-                  onChange={(e) => setFormData({ ...formData, dailyWage: e.target.value })}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                />
+          {/* Row 6: Wage Details (Daily Wage) OR Contract Details (Labour Contract) */}
+          {activeTab === 'Daily Wage' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Daily Wage (₹) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="1000"
+                    value={formData.dailyWage}
+                    onChange={(e) => setFormData({ ...formData, dailyWage: e.target.value })}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                OT Rate (₹/hr)
-              </label>
-              <div className="relative">
-                <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="100"
-                  value={formData.otRate}
-                  onChange={(e) => setFormData({ ...formData, otRate: e.target.value })}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                />
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  OT Rate (₹/hr)
+                </label>
+                <div className="relative">
+                  <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="100"
+                    value={formData.otRate}
+                    onChange={(e) => setFormData({ ...formData, otRate: e.target.value })}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Joining Date
-              </label>
-              <div className="relative">
-                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="date"
-                  value={formData.joiningDate}
-                  onChange={(e) => setFormData({ ...formData, joiningDate: e.target.value })}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Joining Date
+                </label>
+                <div className="relative">
+                  <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="date"
+                    value={formData.joiningDate}
+                    onChange={(e) => setFormData({ ...formData, joiningDate: e.target.value })}
+                    className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-2xl border border-blue-200/80 bg-blue-50/30 space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-blue-800">
+                <Wrench size={14} className="text-blue-600" />
+                <span>Contract Details</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Total Work Area (Sq.ft) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    required
+                    placeholder="e.g. 2000"
+                    value={formData.totalAreaSqft}
+                    onWheel={(e) => e.target.blur()}
+                    onChange={(e) => setFormData({ ...formData, totalAreaSqft: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Rate per Sq.ft (₹) <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <IndianRupee size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      placeholder="e.g. 250"
+                      value={formData.ratePerSqft}
+                      onWheel={(e) => e.target.blur()}
+                      onChange={(e) => setFormData({ ...formData, ratePerSqft: e.target.value })}
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Contract Amount Display */}
+              <div className="p-3.5 rounded-xl bg-white border border-blue-200 flex items-center justify-between shadow-2xs">
+                <div>
+                  <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+                    Total Labour Contract Amount
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {(parseFloat(formData.totalAreaSqft) || 0).toLocaleString('en-IN')} Sq.ft × ₹
+                    {(parseFloat(formData.ratePerSqft) || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+                <div className="text-lg font-black text-blue-700">
+                  ₹
+                  {Math.round(
+                    (parseFloat(formData.totalAreaSqft) || 0) *
+                      (parseFloat(formData.ratePerSqft) || 0)
+                  ).toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Contract Start Date <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="date"
+                      required
+                      value={formData.contractStartDate}
+                      onChange={(e) => setFormData({ ...formData, contractStartDate: e.target.value })}
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Expected Completion
+                  </label>
+                  <div className="relative">
+                    <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="date"
+                      min={formData.contractStartDate}
+                      value={formData.expectedCompletionDate}
+                      onChange={(e) =>
+                        setFormData({ ...formData, expectedCompletionDate: e.target.value })
+                      }
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Scope of Work / Contract Notes
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Describe work scope, milestones, or payment terms..."
+                  value={formData.scopeNotes}
+                  onChange={(e) => setFormData({ ...formData, scopeNotes: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 resize-none"
                 />
               </div>
             </div>
-          </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
@@ -443,10 +664,20 @@ export default function AddLabourModal({
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl bg-[#008744] hover:bg-[#00743a] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
+              className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer ${
+                activeTab === 'Labour Contract'
+                  ? 'bg-[#0072ff] hover:bg-blue-700 shadow-blue-700/20'
+                  : 'bg-[#008744] hover:bg-[#00743a] shadow-emerald-700/20'
+              }`}
             >
               <Plus size={15} />
-              <span>{workerToEdit ? 'Save Changes' : 'Add Worker'}</span>
+              <span>
+                {workerToEdit
+                  ? 'Save Changes'
+                  : activeTab === 'Labour Contract'
+                  ? 'Add Contractor'
+                  : 'Add Worker'}
+              </span>
             </button>
           </div>
         </form>

@@ -24,9 +24,25 @@ const materialMasterSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    size: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    type: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    brand: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     defaultPrice: {
       type: Number,
-      required: true,
+      required: false,
+      default: 0,
       min: 0,
     },
     status: {

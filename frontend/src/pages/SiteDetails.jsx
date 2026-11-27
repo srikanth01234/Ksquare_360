@@ -33,6 +33,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { siteApi, expenseApi, dailyUpdateApi, invoiceApi, paymentApi } from '../services/api';
+import { buildExpensePayload } from '../utils/expensePayload';
 import AddExpenseModal from '../components/AddExpenseModal';
 import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
 import AddSiteModal from '../components/AddSiteModal';
@@ -67,6 +68,10 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   const [siteUpdates, setSiteUpdates] = useState([]);
   const [siteInvoices, setSiteInvoices] = useState([]);
   const [sitePayments, setSitePayments] = useState([]);
+  const [paymentsLoaded, setPaymentsLoaded] = useState(false);
+  const [payingExpense, setPayingExpense] = useState(null);
+  const [payForm, setPayForm] = useState({ amount: '', paymentMode: 'Cash', referenceNo: '', notes: '' });
+  const [payError, setPayError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch real financial figures & related data from backend
@@ -140,6 +145,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
           return matchId || matchName || matchCode;
         });
         setSitePayments(filtered);
+        setPaymentsLoaded(true);
       }
     } catch (err) {
       console.warn('Could not load site relation records:', err.message);
@@ -180,7 +186,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
     .filter((p) => p.flowType === 'RECEIVED' || p.flowType === 'INCOMING' || p.type === 'Receipt')
     .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 
-  const clientPaid = dynamicClientPaid > 0 ? dynamicClientPaid : (currentSite.financials?.clientPaid ?? currentSite.clientPaid ?? 0);
+  const clientPaid = paymentsLoaded ? dynamicClientPaid : (currentSite.financials?.clientPaid ?? currentSite.clientPaid ?? 0);
   const excessAmount = clientPaid - totalExpenses;
   const projectBudget = currentSite.projectBudget ?? currentSite.financials?.projectBudget ?? 0;
   const clientPending = Math.max(0, projectBudget - clientPaid);
@@ -194,6 +200,18 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
 
   const spentPercent = clientPaid > 0 ? Math.min(100, Math.round((totalExpenses / clientPaid) * 100)) : 0;
   const excessPercent = clientPaid > 0 ? Math.max(0, 100 - spentPercent) : 0;
+
+  // Dynamic Client Payment Progress: (Amount Received ÷ Total Contract Budget) × 100
+  const paymentProgressPercent =
+    clientPaid > 0 && projectBudget > 0
+      ? Math.min(100, Math.round((clientPaid / projectBudget) * 100))
+      : 0;
+  const paymentProgressRingColor =
+    paymentProgressPercent > 90
+      ? { stroke: '#ef4444', text: 'text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200' }
+      : paymentProgressPercent >= 50
+      ? { stroke: '#f59e0b', text: 'text-amber-600', badge: 'bg-amber-50 text-amber-800 border-amber-200' }
+      : { stroke: '#10b981', text: 'text-emerald-600', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 
   const tabs = [
     { id: 'Overview', label: 'Overview', icon: Home },
@@ -223,36 +241,12 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   // Handlers for Add modals
   const handleAddExpense = async (newExp) => {
     try {
-      const sId = currentSite._id || currentSite.id;
-      const rawAmt = typeof newExp.totalExpenseAmount === 'number'
-        ? newExp.totalExpenseAmount
-        : parseFloat(String(newExp.amount || '').replace(/[^\d.]/g, '')) || 0;
-
-      await expenseApi.create({
-        siteId: sId,
-        site: sId,
-        siteName: currentSite.name,
-        siteCode: currentSite.code,
-        category: newExp.category,
-        subCategory: newExp.subCategory || '',
-        expenseType: newExp.expenseType || (newExp.isAdditionalWork || newExp.category === 'Additional Work' ? 'ADDITIONAL_WORK' : 'NORMAL'),
-        isAdditionalWork: Boolean(newExp.isAdditionalWork || newExp.category === 'Additional Work'),
-        billableToClient: Boolean(newExp.billableToClient),
-        description: newExp.description,
-        supplierName: newExp.supplierName || newExp.supplier || '-',
-        amount: rawAmt,
-        quantity: newExp.quantity,
-        unit: newExp.unit,
-        rate: newExp.rate,
-        paymentStatus: newExp.paymentStatus || 'Paid',
-        paymentMode: newExp.paymentMethod === 'UPI' ? 'UPI (GPay)' : 'Cash',
-        date: newExp.date || new Date().toISOString(),
-        items: newExp.materialItems || [],
-        notes: newExp.notes || '',
-      });
+      const payload = buildExpensePayload(newExp, currentSite);
+      await expenseApi.create(payload);
       await loadAllSiteData();
     } catch (err) {
       console.warn('Could not add expense:', err.message);
+      alert(`Could not save expense: ${err.message}`);
     }
   };
 
@@ -285,26 +279,55 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
     }
   };
 
-  const handleClearExpensePayment = async (exp) => {
-    if (!window.confirm(`Record outgoing payment and mark "${exp.description}" as Paid?`)) return;
+  const handleClearExpensePayment = (exp) => {
+    const outstanding =
+      exp.pendingAmount !== undefined && exp.pendingAmount > 0
+        ? exp.pendingAmount
+        : Math.max(0, (Number(exp.amount) || 0) - (Number(exp.paidAmount) || 0));
+    setPayingExpense({ ...exp, outstanding });
+    setPayForm({ amount: String(outstanding), paymentMode: 'Cash', referenceNo: '', notes: '' });
+    setPayError('');
+  };
+
+  const handleConfirmRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!payingExpense) return;
+    const payAmt = parseFloat(payForm.amount);
+    const maxAllowed = payingExpense.outstanding || 0;
+    if (isNaN(payAmt) || payAmt <= 0) {
+      setPayError('Payment amount must be greater than ₹0.');
+      return;
+    }
+    if (payAmt > maxAllowed) {
+      setPayError(`Payment amount cannot exceed remaining outstanding amount (₹${maxAllowed.toLocaleString('en-IN')}).`);
+      return;
+    }
     try {
-      const amt = exp.pendingAmount || exp.amount || 0;
       await paymentApi.create({
         flowType: 'OUTGOING',
         siteId: currentSite._id || currentSite.id,
         siteName: currentSite.name,
         siteCode: currentSite.code,
-        expenseId: exp._id || exp.id,
-        partyName: exp.supplierName && exp.supplierName !== '-' ? exp.supplierName : exp.description,
-        category: exp.category || 'Materials',
-        amount: amt,
-        paymentMode: 'Bank Transfer (NEFT)',
-        referenceNo: `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
-        invoiceRef: `Settlement for ${exp.description}`,
+        expenseId: payingExpense._id || payingExpense.id,
+        partyName: payingExpense.supplierName && payingExpense.supplierName !== '-' ? payingExpense.supplierName : payingExpense.description,
+        category:
+          payingExpense.category === 'Materials'
+            ? 'Materials'
+            : payingExpense.category === 'Labour'
+            ? 'Labour Wages'
+            : payingExpense.category === 'Rental'
+            ? 'Machinery Rental'
+            : 'Other',
+        amount: payAmt,
+        paymentMode: payForm.paymentMode || 'Cash',
+        referenceNo: payForm.referenceNo || `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
+        invoiceRef: `Settlement for ${payingExpense.description}`,
+        notes: payForm.notes || '',
       });
+      setPayingExpense(null);
       await loadAllSiteData();
     } catch (err) {
-      console.warn('Error clearing payment:', err.message);
+      setPayError(err?.message || 'Could not record payment.');
     }
   };
 
@@ -650,10 +673,10 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                   </div>
                 </div>
 
-                {/* 3. Excess Amount */}
+                {/* 3. Cash in Hand */}
                 <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200/80 transition-all hover:bg-emerald-50 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-800">Excess Amount (In Hand)</span>
+                    <span className="text-xs font-bold text-emerald-800">Cash in Hand</span>
                     <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center">
                       <TrendingUp size={13} />
                     </div>
@@ -815,9 +838,9 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
             </div>
           </div>
 
-          {/* Right Sidebar: Site Information Card (4 cols) */}
-          <div className="lg:col-span-4">
-            <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-sm space-y-4 sticky top-20">
+          {/* Right Sidebar: Site Information Card + Compact Payment Progress Card (4 cols) */}
+          <div className="lg:col-span-4 space-y-5">
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-sm space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
                   <Info size={16} className="text-emerald-600" />
@@ -901,6 +924,78 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                   <div className="flex items-center gap-1.5 font-semibold text-slate-800">
                     <Calendar size={13} className="text-slate-400" />
                     <span>{formatDate(currentSite.expectedDate)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Compact Payment Progress Card directly below Site Information */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/90 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                  <CreditCard size={16} className="text-emerald-600" />
+                  <span>Payment Progress</span>
+                </div>
+                <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${paymentProgressRingColor.badge}`}>
+                  {paymentProgressPercent}%
+                </span>
+              </div>
+
+              <div className="flex items-center gap-5">
+                {/* Circular Progress Indicator */}
+                <div className="relative w-24 h-24 shrink-0 flex items-center justify-center">
+                  <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="40"
+                      fill="none"
+                      stroke="#f1f5f9"
+                      strokeWidth="10"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="40"
+                      fill="none"
+                      stroke={paymentProgressRingColor.stroke}
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 40}
+                      strokeDashoffset={
+                        2 * Math.PI * 40 * (1 - paymentProgressPercent / 100)
+                      }
+                      className="transition-all duration-500"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`text-lg font-black leading-none ${paymentProgressRingColor.text}`}>
+                      {paymentProgressPercent}%
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
+                      Received
+                    </span>
+                  </div>
+                </div>
+
+                {/* Amount Received & Yet to Receive ONLY */}
+                <div className="flex-1 space-y-3 text-xs min-w-0">
+                  <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+                    <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                      Amount Received
+                    </div>
+                    <div className="text-sm font-black text-slate-900 mt-0.5 truncate">
+                      {formatCurrency(clientPaid)}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
+                    <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">
+                      Yet to Receive
+                    </div>
+                    <div className="text-sm font-black text-slate-900 mt-0.5 truncate">
+                      {formatCurrency(clientPending)}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1026,12 +1121,22 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                       <td className="py-3.5 px-4 text-center text-slate-600 font-medium">
                         {e.quantity ? `${e.quantity} ${e.unit || ''}` : '-'}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-black text-slate-900 whitespace-nowrap">
-                        {formatCurrency(e.amount)}
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="font-black text-slate-900">{formatCurrency(e.amount)}</div>
+                        {e.paymentStatus === 'Partial' && (
+                          <div className="text-[10px] font-semibold mt-0.5 space-x-1.5">
+                            <span className="text-emerald-700">Paid: {formatCurrency(e.paidAmount || 0)}</span>
+                            <span className="text-amber-700">Due: {formatCurrency(e.pendingAmount || 0)}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          e.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          e.paymentStatus === 'Paid'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : e.paymentStatus === 'Partial'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-amber-100 text-amber-800'
                         }`}>
                           {e.paymentStatus || 'Paid'}
                         </span>
@@ -1178,6 +1283,123 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Record Partial / Remaining Payment Modal */}
+      {payingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 my-8 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-blue-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                  <CreditCard size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Record Expense Payment</h3>
+                  <p className="text-xs text-slate-500 truncate max-w-[240px]">{payingExpense.description}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayingExpense(null)}
+                className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center cursor-pointer"
+              >
+                <span className="text-xs font-black">✕</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmRecordPayment} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">Total Bill</div>
+                  <div className="text-xs font-black text-slate-900 mt-0.5">{formatCurrency(payingExpense.amount)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-emerald-700 uppercase">Paid</div>
+                  <div className="text-xs font-black text-emerald-800 mt-0.5">
+                    {formatCurrency(payingExpense.paidAmount || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-amber-700 uppercase">Outstanding</div>
+                  <div className="text-xs font-black text-amber-800 mt-0.5">
+                    {formatCurrency(payingExpense.outstanding || 0)}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Payment Amount (₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="1"
+                  max={payingExpense.outstanding}
+                  required
+                  value={payForm.amount}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  onChange={(e) => {
+                    setPayError('');
+                    setPayForm({ ...payForm, amount: e.target.value });
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Enter partial or full amount up to {formatCurrency(payingExpense.outstanding || 0)}.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1.5">Payment Method *</label>
+                  <select
+                    value={payForm.paymentMode}
+                    onChange={(e) => setPayForm({ ...payForm, paymentMode: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="UPI (GPay)">UPI</option>
+                    <option value="Bank Transfer (NEFT)">Bank Transfer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1.5">Reference No.</label>
+                  <input
+                    type="text"
+                    placeholder="Optional UTR / Ref"
+                    value={payForm.referenceNo}
+                    onChange={(e) => setPayForm({ ...payForm, referenceNo: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+
+              {payError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold">
+                  {payError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPayingExpense(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 cursor-pointer"
+                >
+                  Record Payment
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

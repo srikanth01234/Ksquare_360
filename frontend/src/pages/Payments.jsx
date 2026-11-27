@@ -205,6 +205,40 @@ export default function Payments() {
 
   const netBalance = totalReceived - totalOutgoing;
 
+  // Dynamic Payment Progress: (Total Received Amount ÷ Total Contract Budget) × 100
+  // Excludes outgoing payments completely; starts at 0% when no payment is received
+  const totalContractBudget = useMemo(() => {
+    return sitesList.reduce((sum, s) => sum + (Number(s.projectBudget) || 0), 0);
+  }, [sitesList]);
+
+  const paymentProgressPercent = useMemo(() => {
+    if (totalReceived <= 0 || totalContractBudget <= 0) return 0;
+    const rawPct = (totalReceived / totalContractBudget) * 100;
+    return Math.min(100, Math.round(rawPct));
+  }, [totalReceived, totalContractBudget]);
+
+  const paymentProgressColor = useMemo(() => {
+    if (paymentProgressPercent > 90) {
+      return {
+        bar: 'bg-rose-500',
+        text: 'text-rose-700',
+        badge: 'bg-rose-50 text-rose-700 border-rose-200',
+      };
+    }
+    if (paymentProgressPercent >= 50) {
+      return {
+        bar: 'bg-amber-400',
+        text: 'text-amber-700',
+        badge: 'bg-amber-50 text-amber-800 border-amber-200',
+      };
+    }
+    return {
+      bar: 'bg-emerald-500',
+      text: 'text-emerald-700',
+      badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    };
+  }, [paymentProgressPercent]);
+
   // Date Filter Predicate
   const matchesDateFilter = (item) => {
     if (selectedDateFilter === 'ALL') return true;
@@ -353,8 +387,12 @@ export default function Payments() {
       (s) => `${s.name} (${s.code})` === receivedForm.siteName || s.name === receivedForm.siteName || s._id === receivedForm.siteName
     );
     const siteId = matched ? matched._id : null;
-    const siteName = matched ? matched.name : (receivedForm.siteName.split(' (')[0] || 'Site');
-    const siteCode = matched ? matched.code : (receivedForm.siteName.split(' (')[1]?.replace(')', '') || '');
+    if (!siteId) {
+      alert('Please select a valid construction site from the list.');
+      return;
+    }
+    const siteName = matched.name;
+    const siteCode = matched.code;
 
     try {
       await paymentApi.create({
@@ -386,38 +424,8 @@ export default function Payments() {
         notes: '',
       });
     } catch (err) {
-      console.warn('API error creating received payment fallback:', err.message);
-      const newRecord = {
-        _id: String(Date.now()),
-        id: `RCP-2026-${String(receivedPayments.length + 1).padStart(3, '0')}`,
-        displayId: `RCP-2026-${String(receivedPayments.length + 1).padStart(3, '0')}`,
-        rawDate: receivedForm.date,
-        date: new Date(receivedForm.date).toLocaleDateString('en-IN'),
-        clientName: receivedForm.clientName,
-        siteName: siteName,
-        siteCode: siteCode,
-        invoiceRef: receivedForm.invoiceRef || 'Direct Advance',
-        amount: parseFloat(receivedForm.amount),
-        paymentMode: receivedForm.paymentMode,
-        referenceNo: receivedForm.referenceNo || `RCP-${Math.floor(100000 + Math.random() * 900000)}`,
-        status: 'Cleared',
-        receiptUrl: receivedReceiptPreview || '',
-        notes: receivedForm.notes || '',
-        flowType: 'RECEIVED',
-      };
-      setReceivedPayments([newRecord, ...receivedPayments]);
-      setIsReceivedModalOpen(false);
-      setReceivedReceiptPreview(null);
-      setReceivedForm({
-        clientName: '',
-        siteName: '',
-        invoiceRef: '',
-        amount: '',
-        paymentMode: 'Bank Transfer (NEFT)',
-        referenceNo: '',
-        date: new Date().toISOString().split('T')[0],
-        notes: '',
-      });
+      console.warn('API error creating received payment:', err.message);
+      alert(`Could not record received payment: ${err.message}`);
     }
   };
 
@@ -456,14 +464,38 @@ export default function Payments() {
 
   const handleSaveOutgoing = async (e) => {
     e.preventDefault();
-    if (!outgoingForm.amount || parseFloat(outgoingForm.amount) <= 0) return;
+    const payAmt = parseFloat(outgoingForm.amount);
+    if (isNaN(payAmt) || payAmt <= 0) {
+      alert('Please enter a valid payment amount greater than ₹0.');
+      return;
+    }
+
+    if (selectedPendingExpenseId) {
+      const linkedExp = pendingExpenses.find((ex) => (ex._id || ex.id) === selectedPendingExpenseId);
+      const outstanding =
+        linkedExp?.pendingAmount !== undefined && linkedExp.pendingAmount > 0
+          ? linkedExp.pendingAmount
+          : linkedExp?.amount || 0;
+      if (linkedExp && payAmt > outstanding) {
+        alert(`Payment amount (₹${payAmt.toLocaleString('en-IN')}) cannot exceed remaining outstanding amount (₹${outstanding.toLocaleString('en-IN')}).`);
+        return;
+      }
+    }
 
     const matched = sitesList.find(
-      (s) => `${s.name} (${s.code})` === outgoingForm.siteName || s.name === outgoingForm.siteName || s._id === outgoingForm.siteName
+      (s) =>
+        `${s.name} (${s.code})` === outgoingForm.siteName ||
+        s.name === outgoingForm.siteName ||
+        s.name === outgoingForm.siteName.split(' (')[0] ||
+        s._id === outgoingForm.siteName
     );
     const siteId = matched ? matched._id : null;
-    const siteName = matched ? matched.name : (outgoingForm.siteName.split(' (')[0] || 'Site');
-    const siteCode = matched ? matched.code : (outgoingForm.siteName.split(' (')[1]?.replace(')', '') || '');
+    if (!siteId) {
+      alert('Please select a valid construction site.');
+      return;
+    }
+    const siteName = matched.name;
+    const siteCode = matched.code;
 
     try {
       await paymentApi.create({
@@ -472,9 +504,10 @@ export default function Payments() {
         siteName,
         siteCode,
         expenseId: selectedPendingExpenseId || null,
+        recordAsSiteExpense: !selectedPendingExpenseId,
         partyName: outgoingForm.beneficiary,
         category: outgoingForm.category || 'Materials',
-        amount: parseFloat(outgoingForm.amount),
+        amount: payAmt,
         paymentMode: outgoingForm.paymentMode,
         referenceNo: outgoingForm.referenceNo || `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
         invoiceRef: outgoingForm.billRef || '',
@@ -498,29 +531,8 @@ export default function Payments() {
         notes: '',
       });
     } catch (err) {
-      console.warn('API error creating outgoing payment fallback:', err.message);
-      const newRecord = {
-        _id: String(Date.now()),
-        id: `PV-2026-${String(outgoingPayments.length + 100).padStart(3, '0')}`,
-        displayId: `PV-2026-${String(outgoingPayments.length + 100).padStart(3, '0')}`,
-        rawDate: outgoingForm.date,
-        date: new Date(outgoingForm.date).toLocaleDateString('en-IN'),
-        beneficiary: outgoingForm.beneficiary || 'Supplier',
-        category: outgoingForm.category,
-        siteName: siteName,
-        siteCode: siteCode,
-        billRef: outgoingForm.billRef || 'Direct Voucher',
-        amount: parseFloat(outgoingForm.amount),
-        paymentMode: outgoingForm.paymentMode,
-        referenceNo: outgoingForm.referenceNo || `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
-        status: 'Paid',
-        receiptUrl: outgoingReceiptPreview || '',
-        notes: outgoingForm.notes || '',
-        flowType: 'OUTGOING',
-      };
-      setOutgoingPayments([newRecord, ...outgoingPayments]);
-      setIsOutgoingModalOpen(false);
-      setOutgoingReceiptPreview(null);
+      console.warn('API error creating outgoing payment:', err.message);
+      alert(`Could not save payment: ${err.message}`);
     }
   };
 
@@ -560,33 +572,7 @@ export default function Payments() {
       setEditingPayment(null);
     } catch (err) {
       console.warn('Could not update payment in backend:', err.message);
-      // Local fallback
-      const updateFn = (list) =>
-        list.map((item) =>
-          item._id === editingPayment._id || item.id === editingPayment.id
-            ? {
-                ...item,
-                clientName: editForm.partyName,
-                beneficiary: editForm.partyName,
-                category: editForm.category,
-                amount: parseFloat(editForm.amount) || 0,
-                paymentMode: editForm.paymentMode,
-                referenceNo: editForm.referenceNo,
-                invoiceRef: editForm.invoiceRef,
-                billRef: editForm.invoiceRef,
-                status: editForm.status,
-                rawDate: editForm.date,
-                date: new Date(editForm.date).toLocaleDateString('en-IN'),
-                notes: editForm.notes,
-              }
-            : item
-        );
-      if (editingPayment.flowType === 'RECEIVED') {
-        setReceivedPayments(updateFn);
-      } else {
-        setOutgoingPayments(updateFn);
-      }
-      setEditingPayment(null);
+      alert(`Could not update payment: ${err.message}`);
     }
   };
 
@@ -599,8 +585,7 @@ export default function Payments() {
       await loadAllData();
     } catch (err) {
       console.warn('Could not delete payment in backend:', err.message);
-      setReceivedPayments((prev) => prev.filter((p) => p._id !== id && p.id !== id));
-      setOutgoingPayments((prev) => prev.filter((p) => p._id !== id && p.id !== id));
+      alert(`Could not delete payment: ${err.message}`);
     }
   };
 
@@ -738,6 +723,26 @@ export default function Payments() {
           <div className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1.5">
             <span className="font-bold text-emerald-800">{receivedPayments.length} receipts</span>
             <span>across construction sites</span>
+          </div>
+
+          {/* Dynamic Payment Progress Bar (Client Received vs Total Contract Budget) */}
+          <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-bold text-slate-600">Payment Progress</span>
+              <span className={`font-black ${paymentProgressColor.text}`}>
+                {paymentProgressPercent}%
+              </span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${paymentProgressColor.bar}`}
+                style={{ width: `${paymentProgressPercent}%` }}
+              />
+            </div>
+            <div className="text-[10px] text-slate-400 font-medium flex items-center justify-between">
+              <span>Received: ₹{totalReceived.toLocaleString('en-IN')}</span>
+              <span>Budget: ₹{totalContractBudget.toLocaleString('en-IN')}</span>
+            </div>
           </div>
         </div>
 

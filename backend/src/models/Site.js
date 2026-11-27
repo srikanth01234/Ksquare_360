@@ -33,6 +33,11 @@ const siteSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Client',
+      default: null,
+    },
     contact: {
       type: String,
       default: '',

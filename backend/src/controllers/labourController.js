@@ -7,8 +7,12 @@ const Site = require('../models/Site');
 // @access  Public
 exports.getLabourers = async (req, res, next) => {
   try {
-    const { workerType, status, siteId, search } = req.query;
+    const { workerType, engagementType, status, siteId, search } = req.query;
     const filter = {};
+
+    if (engagementType && engagementType !== 'All') {
+      filter.engagementType = engagementType;
+    }
 
     if (workerType && workerType !== 'All') {
       filter.workerType = workerType;
@@ -27,6 +31,7 @@ exports.getLabourers = async (req, res, next) => {
         { name: { $regex: search, $options: 'i' } },
         { phone: { $regex: search, $options: 'i' } },
         { workerType: { $regex: search, $options: 'i' } },
+        { contractWorkType: { $regex: search, $options: 'i' } },
         { aadhaarNumber: { $regex: search, $options: 'i' } },
       ];
     }
@@ -78,24 +83,45 @@ exports.getLabourById = async (req, res, next) => {
 exports.createLabour = async (req, res, next) => {
   try {
     const {
+      engagementType = 'Daily Wage',
       name,
       workerType,
+      contractWorkType,
       phone,
       address,
       aadhaarNumber,
       panNumber,
       dailyWage,
       overtimeRate,
+      totalAreaSqft,
+      ratePerSqft,
+      totalContractAmount,
+      contractStartDate,
+      expectedCompletionDate,
+      scopeNotes,
+      joiningDate,
       status,
       currentSite,
     } = req.body;
 
-    if (!name || !workerType || !phone) {
+    const isContract = engagementType === 'Labour Contract';
+    const resolvedWorkerType = isContract
+      ? contractWorkType || workerType || 'Labour Contract'
+      : workerType;
+
+    if (!name || !resolvedWorkerType || !phone) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide worker name, workerType, and phone number',
+        message: 'Please provide name, work/labour type, and phone number',
       });
     }
+
+    const parsedArea = parseFloat(totalAreaSqft) || 0;
+    const parsedRatePerSqft = parseFloat(ratePerSqft) || 0;
+    const computedContractAmount =
+      parsedArea > 0 && parsedRatePerSqft > 0
+        ? Math.round(parsedArea * parsedRatePerSqft)
+        : parseFloat(totalContractAmount) || 0;
 
     let photoUrl = '';
     if (req.file) {
@@ -105,22 +131,31 @@ exports.createLabour = async (req, res, next) => {
     }
 
     const worker = await Labour.create({
+      engagementType: isContract ? 'Labour Contract' : 'Daily Wage',
       name,
-      workerType,
+      workerType: resolvedWorkerType,
+      contractWorkType: isContract ? resolvedWorkerType : '',
       phone,
       address: address || '',
       aadhaarNumber: aadhaarNumber || '',
       panNumber: panNumber || '',
       photoUrl,
-      dailyWage: parseFloat(dailyWage) || 800,
-      overtimeRate: parseFloat(overtimeRate) || 100,
+      dailyWage: isContract ? 0 : parseFloat(dailyWage) || 800,
+      overtimeRate: isContract ? 0 : parseFloat(overtimeRate) || 100,
+      totalAreaSqft: isContract ? parsedArea : 0,
+      ratePerSqft: isContract ? parsedRatePerSqft : 0,
+      totalContractAmount: isContract ? computedContractAmount : 0,
+      contractStartDate: isContract && contractStartDate ? new Date(contractStartDate) : null,
+      expectedCompletionDate: isContract && expectedCompletionDate ? new Date(expectedCompletionDate) : null,
+      scopeNotes: isContract ? scopeNotes || '' : '',
+      joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
       status: status || 'Active',
       currentSite: currentSite || null,
     });
 
     res.status(201).json({
       success: true,
-      message: `Worker ${worker.name} registered successfully`,
+      message: `${isContract ? 'Labour contractor' : 'Worker'} ${worker.name} registered successfully`,
       data: worker,
     });
   } catch (error) {
@@ -139,26 +174,52 @@ exports.updateLabour = async (req, res, next) => {
     }
 
     const {
+      engagementType,
       name,
       workerType,
+      contractWorkType,
       phone,
       address,
       aadhaarNumber,
       panNumber,
       dailyWage,
       overtimeRate,
+      totalAreaSqft,
+      ratePerSqft,
+      totalContractAmount,
+      contractStartDate,
+      expectedCompletionDate,
+      scopeNotes,
+      joiningDate,
       status,
       currentSite,
     } = req.body;
 
+    if (engagementType) worker.engagementType = engagementType;
     if (name) worker.name = name;
     if (workerType) worker.workerType = workerType;
+    if (contractWorkType !== undefined) worker.contractWorkType = contractWorkType;
     if (phone) worker.phone = phone;
     if (address !== undefined) worker.address = address;
     if (aadhaarNumber !== undefined) worker.aadhaarNumber = aadhaarNumber;
     if (panNumber !== undefined) worker.panNumber = panNumber;
     if (dailyWage !== undefined) worker.dailyWage = parseFloat(dailyWage);
     if (overtimeRate !== undefined) worker.overtimeRate = parseFloat(overtimeRate);
+    if (totalAreaSqft !== undefined) worker.totalAreaSqft = parseFloat(totalAreaSqft) || 0;
+    if (ratePerSqft !== undefined) worker.ratePerSqft = parseFloat(ratePerSqft) || 0;
+    if (totalContractAmount !== undefined) {
+      worker.totalContractAmount = parseFloat(totalContractAmount) || 0;
+    } else if (totalAreaSqft !== undefined || ratePerSqft !== undefined) {
+      worker.totalContractAmount = Math.round((worker.totalAreaSqft || 0) * (worker.ratePerSqft || 0));
+    }
+    if (contractStartDate !== undefined) {
+      worker.contractStartDate = contractStartDate ? new Date(contractStartDate) : null;
+    }
+    if (expectedCompletionDate !== undefined) {
+      worker.expectedCompletionDate = expectedCompletionDate ? new Date(expectedCompletionDate) : null;
+    }
+    if (scopeNotes !== undefined) worker.scopeNotes = scopeNotes;
+    if (joiningDate !== undefined && joiningDate) worker.joiningDate = new Date(joiningDate);
     if (status) worker.status = status;
     if (currentSite !== undefined) worker.currentSite = currentSite || null;
 

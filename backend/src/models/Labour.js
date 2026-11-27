@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 const labourSchema = new mongoose.Schema(
   {
+    engagementType: {
+      type: String,
+      enum: ['Daily Wage', 'Labour Contract'],
+      default: 'Daily Wage',
+    },
     name: {
       type: String,
       required: true,
@@ -9,8 +14,13 @@ const labourSchema = new mongoose.Schema(
     },
     workerType: {
       type: String,
-      required: true, // Mason, Helper, Bar Bender, Carpenter, Electrician, Plumber, Painter
+      required: true, // Mason, Helper, Bar Bender, etc. or Contract Work Type
       trim: true,
+    },
+    contractWorkType: {
+      type: String,
+      trim: true,
+      default: '',
     },
     phone: {
       type: String,
@@ -37,7 +47,6 @@ const labourSchema = new mongoose.Schema(
     },
     dailyWage: {
       type: Number,
-      required: true,
       default: 800,
       min: 0,
     },
@@ -45,6 +54,37 @@ const labourSchema = new mongoose.Schema(
       type: Number,
       default: 100,
       min: 0,
+    },
+    totalAreaSqft: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    ratePerSqft: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    totalContractAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    contractStartDate: {
+      type: Date,
+      default: null,
+    },
+    expectedCompletionDate: {
+      type: Date,
+      default: null,
+    },
+    scopeNotes: {
+      type: String,
+      default: '',
+    },
+    joiningDate: {
+      type: Date,
+      default: Date.now,
     },
     status: {
       type: String,

@@ -23,7 +23,7 @@ import {
   Clock,
   ArrowRight,
 } from 'lucide-react';
-import { siteApi } from '../services/api';
+import { clientApi } from '../services/api';
 
 // Structured Project Code Generator (e.g. CHN-11-2026-NB-01 or MDU-11-2026-RE-01)
 const generateStructuredProjectCode = (
@@ -63,6 +63,7 @@ export default function AddSiteModal({
     name: '',
     code: '',
     client: '',
+    clientId: '',
     contact: '',
     description: '',
     address: '',
@@ -75,49 +76,43 @@ export default function AddSiteModal({
     status: 'Active', // 'Active' | 'Completed' | 'On Hold'
   });
 
-  // Client Searchable Combobox State
+  // Client Searchable Dropdown State (from Master Data -> Clients)
   const [clientSearch, setClientSearch] = useState('');
   const [isClientDropdownOpen, setIsClientDropdownOpen] = useState(false);
+  const [clientError, setClientError] = useState('');
+  const [loadingClients, setLoadingClients] = useState(false);
   const clientDropdownRef = useRef(null);
-  const [knownClients, setKnownClients] = useState([
-    { name: 'Arun Kumar', contact: '+91 98401 23456', location: 'Chennai' },
-    { name: 'Rajesh Sharma', contact: '+91 98840 56789', location: 'Coimbatore' },
-    { name: 'Priya Sundaram', contact: '+91 97910 11223', location: 'Madurai' },
-    { name: 'Murugan Builders', contact: '+91 94440 98765', location: 'Trichy' },
-    { name: 'Suresh Babu', contact: '+91 98412 34567', location: 'Chennai' },
-    { name: 'Karthik Raja', contact: '+91 99401 88990', location: 'Tirunelveli' },
-  ]);
+  const [knownClients, setKnownClients] = useState([]);
 
-  // Load existing clients from backend on open
+  // Load existing clients from Master Data -> Clients on open
   useEffect(() => {
     if (isOpen) {
+      setClientError('');
       loadClientsFromBackend();
     }
   }, [isOpen]);
 
   const loadClientsFromBackend = async () => {
     try {
-      const res = await siteApi.getAll();
-      const sites = res.data || res || [];
-      const extracted = [];
-      sites.forEach((s) => {
-        if (s.client && s.client !== 'Client' && !extracted.some((c) => c.name.toLowerCase() === s.client.toLowerCase())) {
-          extracted.push({
-            name: s.client,
-            contact: s.contact || '',
-            location: s.location || '',
-          });
-        }
-      });
-      if (extracted.length > 0) {
-        setKnownClients((prev) => {
-          const names = new Set(prev.map((c) => c.name.toLowerCase()));
-          const newEntries = extracted.filter((e) => !names.has(e.name.toLowerCase()));
-          return [...prev, ...newEntries];
-        });
-      }
+      setLoadingClients(true);
+      const res = await clientApi.getAll();
+      const list = res.data || res || [];
+      const formatted = Array.isArray(list)
+        ? list.map((c) => ({
+            id: c._id || c.id,
+            name: c.name || '',
+            type: c.type || 'Individual',
+            phone: c.phone || '',
+            email: c.email || '',
+            location: c.city ? `${c.city}${c.state ? `, ${c.state}` : ''}` : (c.address1 || ''),
+          }))
+        : [];
+      setKnownClients(formatted);
     } catch (err) {
-      console.warn('Could not load clients from backend:', err.message);
+      console.warn('Could not load clients from Master Data:', err.message);
+      setKnownClients([]);
+    } finally {
+      setLoadingClients(false);
     }
   };
 
@@ -139,7 +134,8 @@ export default function AddSiteModal({
     return knownClients.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
-        (c.contact && c.contact.includes(q)) ||
+        (c.phone && c.phone.includes(q)) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
         (c.location && c.location.toLowerCase().includes(q))
     );
   }, [clientSearch, knownClients]);
@@ -153,6 +149,7 @@ export default function AddSiteModal({
           name: siteToEdit.name || '',
           code: siteToEdit.code || '',
           client: siteToEdit.client || '',
+          clientId: siteToEdit.clientId || '',
           contact: siteToEdit.contact || '',
           description: siteToEdit.description || '',
           address: siteToEdit.address || '',
@@ -174,6 +171,7 @@ export default function AddSiteModal({
           name: '',
           code: autoCode,
           client: '',
+          clientId: '',
           contact: '',
           description: '',
           address: '',
@@ -214,16 +212,23 @@ export default function AddSiteModal({
     setFormData((prev) => ({
       ...prev,
       client: clientObj.name,
-      contact: clientObj.contact ? clientObj.contact : prev.contact,
+      clientId: clientObj.id || '',
+      contact: clientObj.phone || '',
     }));
     setClientSearch(clientObj.name);
+    setClientError('');
     setIsClientDropdownOpen(false);
   };
 
   const handleClientInputChange = (e) => {
     const val = e.target.value;
     setClientSearch(val);
-    setFormData((prev) => ({ ...prev, client: val }));
+    setClientError('');
+    setFormData((prev) => ({
+      ...prev,
+      client: val === prev.client ? prev.client : '',
+      clientId: val === prev.client ? prev.clientId : '',
+    }));
     setIsClientDropdownOpen(true);
   };
 
@@ -265,14 +270,25 @@ export default function AddSiteModal({
     e.preventDefault();
     if (!formData.name) return;
 
+    const matchedClient =
+      knownClients.find((c) => c.id === formData.clientId) ||
+      knownClients.find((c) => c.name.toLowerCase() === (formData.client || clientSearch).trim().toLowerCase());
+
+    if (!siteToEdit && !matchedClient) {
+      setClientError('Please select an existing client from Master Data → Clients.');
+      setIsClientDropdownOpen(true);
+      return;
+    }
+
     const finalCode =
       formData.code || generateStructuredProjectCode(formData.city, projectType, formData.startDate, runningNumber);
 
     const sitePayload = {
       code: finalCode,
       name: formData.name,
-      client: formData.client || clientSearch || 'Client',
-      contact: formData.contact || '',
+      client: matchedClient ? matchedClient.name : formData.client || clientSearch,
+      clientId: matchedClient ? matchedClient.id : formData.clientId || null,
+      contact: formData.contact || (matchedClient ? matchedClient.phone : '') || '',
       type: projectType,
       location: formData.city || 'Chennai',
       address: formData.address || '',
@@ -468,7 +484,7 @@ export default function AddSiteModal({
                     </p>
                   </div>
 
-                  {/* Client Name with Searchable Dropdown */}
+                  {/* Client Name with Searchable Dropdown (from Master Data -> Clients) */}
                   <div className="relative" ref={clientDropdownRef}>
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                       Client Name <span className="text-rose-500">*</span>
@@ -480,11 +496,13 @@ export default function AddSiteModal({
                       <input
                         type="text"
                         required
-                        placeholder="Search or enter client..."
+                        placeholder="Search client from Master Data..."
                         value={clientSearch}
                         onChange={handleClientInputChange}
                         onFocus={() => setIsClientDropdownOpen(true)}
-                        className="w-full pl-9 pr-8 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs"
+                        className={`w-full pl-9 pr-8 py-2.5 bg-slate-50/70 border rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-2xs ${
+                          clientError ? 'border-rose-400 ring-2 ring-rose-500/15' : 'border-slate-200'
+                        }`}
                       />
                       <button
                         type="button"
@@ -494,6 +512,9 @@ export default function AddSiteModal({
                         <ChevronDown size={14} />
                       </button>
                     </div>
+                    {clientError && (
+                      <p className="text-[11px] font-semibold text-rose-600 mt-1">{clientError}</p>
+                    )}
 
                     {/* Searchable Dropdown Menu */}
                     <AnimatePresence>
@@ -507,47 +528,51 @@ export default function AddSiteModal({
                           <div className="p-2 bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold text-slate-500 flex items-center justify-between">
                             <span className="flex items-center gap-1.5">
                               <Search size={11} className="text-slate-400" />
-                              <span>Select Existing Client or Type New</span>
+                              <span>Select Client (Master Data)</span>
                             </span>
-                            <span className="text-[10px] text-slate-400">{filteredClients.length} found</span>
+                            <span className="text-[10px] text-slate-400">
+                              {loadingClients ? 'Loading...' : `${filteredClients.length} found`}
+                            </span>
                           </div>
 
-                          {filteredClients.length === 0 ? (
+                          {loadingClients ? (
                             <div className="p-3 text-center text-xs text-slate-500">
-                              <div>No existing client named "{clientSearch}"</div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFormData((prev) => ({ ...prev, client: clientSearch }));
-                                  setIsClientDropdownOpen(false);
-                                }}
-                                className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-xs hover:bg-emerald-100 cursor-pointer"
-                              >
-                                <Plus size={12} />
-                                <span>Use "{clientSearch}" as Client</span>
-                              </button>
+                              Loading clients from Master Data...
+                            </div>
+                          ) : filteredClients.length === 0 ? (
+                            <div className="p-3 text-center text-xs text-slate-500 space-y-1">
+                              <div className="font-semibold text-slate-700">
+                                {knownClients.length === 0
+                                  ? 'No clients found in Master Data'
+                                  : `No client matching "${clientSearch}"`}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                Add clients in Master Data → Clients first to avoid duplicates.
+                              </div>
                             </div>
                           ) : (
-                            filteredClients.map((c, i) => (
+                            filteredClients.map((c) => (
                               <div
-                                key={i}
+                                key={c.id || c.name}
                                 onClick={() => handleSelectClient(c)}
                                 className={`px-3.5 py-2.5 hover:bg-emerald-50/60 cursor-pointer flex items-center justify-between transition-colors ${
-                                  formData.client === c.name ? 'bg-emerald-50/80 font-bold text-emerald-900' : 'text-slate-800'
+                                  formData.clientId === c.id || formData.client === c.name
+                                    ? 'bg-emerald-50/80 font-bold text-emerald-900'
+                                    : 'text-slate-800'
                                 }`}
                               >
                                 <div className="flex items-center gap-2.5">
-                                  <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center shrink-0">
+                                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center shrink-0">
                                     {c.name.charAt(0).toUpperCase()}
                                   </div>
                                   <div>
                                     <div className="text-xs font-bold text-slate-900">{c.name}</div>
                                     <div className="text-[10px] text-slate-400">
-                                      {c.contact || 'No phone'} {c.location ? `• ${c.location}` : ''}
+                                      {c.phone || 'No phone'} {c.location ? `• ${c.location}` : ''}
                                     </div>
                                   </div>
                                 </div>
-                                {formData.client === c.name && (
+                                {(formData.clientId === c.id || formData.client === c.name) && (
                                   <Check size={14} className="text-emerald-600" />
                                 )}
                               </div>

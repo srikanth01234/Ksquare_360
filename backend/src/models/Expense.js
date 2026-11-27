@@ -84,6 +84,19 @@ const expenseSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    calculatedAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    billingAmount: {
+      type: Number,
+      default: null,
+    },
+    labourDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
     paymentStatus: {
       type: String,
       enum: ['Paid', 'Pending', 'Partial'],

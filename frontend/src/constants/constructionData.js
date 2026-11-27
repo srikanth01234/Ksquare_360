@@ -33,3 +33,18 @@ export const LABOUR_WORKER_TYPES = [
   'Artist',
 ];
 
+// Master List of Square-Foot Labour Contract Work Types
+export const CONTRACT_WORK_TYPES = [
+  'Civil Masonry',
+  'Plastering',
+  'Centering / Shuttering',
+  'Bar Bending / Steel Fixing',
+  'Tile & Granite Laying',
+  'Painting',
+  'Plumbing',
+  'Electrical',
+  'Waterproofing',
+  'Full Building Labour Contract',
+  'Other',
+];
+

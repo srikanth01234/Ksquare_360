@@ -1,4 +1,5 @@
 const Site = require('../models/Site');
+const Client = require('../models/Client');
 const Expense = require('../models/Expense');
 const Payment = require('../models/Payment');
 const DailyUpdate = require('../models/DailyUpdate');
@@ -197,9 +198,24 @@ exports.getSiteById = async (req, res, next) => {
 // @access  Public
 exports.createSite = async (req, res, next) => {
   try {
-    const { name, client, contact, location, city, type, projectBudget, startDate, expectedDate, photoUrl } = req.body;
+    const { name, client, clientId, contact, location, city, type, projectBudget, startDate, expectedDate, photoUrl } = req.body;
 
-    if (!name || !client) {
+    let resolvedClientName = client ? client.trim() : '';
+    let resolvedContact = contact || '';
+    let resolvedClientId = null;
+
+    if (clientId) {
+      const clientDoc = await Client.findById(clientId);
+      if (clientDoc) {
+        resolvedClientId = clientDoc._id;
+        resolvedClientName = clientDoc.name;
+        if (!resolvedContact && clientDoc.phone) {
+          resolvedContact = clientDoc.phone;
+        }
+      }
+    }
+
+    if (!name || !resolvedClientName) {
       return res.status(400).json({
         success: false,
         message: 'Site name and client name are required',
@@ -227,8 +243,9 @@ exports.createSite = async (req, res, next) => {
       type: siteType,
       category: siteType.toLowerCase().includes('reno') ? 'RE' : 'NB',
       status: req.body.status || 'Active',
-      client,
-      contact: contact || '',
+      client: resolvedClientName,
+      clientId: resolvedClientId,
+      contact: resolvedContact,
       location: location || `${siteCity}, TN`,
       city: siteCity,
       startDate: startDate ? new Date(startDate) : new Date(),
@@ -236,6 +253,10 @@ exports.createSite = async (req, res, next) => {
       projectBudget: parseFloat(projectBudget) || 0,
       photoUrl: photoUrl || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
     });
+
+    if (resolvedClientId) {
+      await Client.findByIdAndUpdate(resolvedClientId, { $inc: { projectsCount: 1 } });
+    }
 
     const financials = await computeSiteFinancials(newSite._id, newSite.projectBudget);
 
@@ -257,7 +278,7 @@ exports.createSite = async (req, res, next) => {
 // @access  Public
 exports.updateSite = async (req, res, next) => {
   try {
-    const { name, client, contact, location, city, type, status, projectBudget, startDate, expectedDate, photoUrl } = req.body;
+    const { name, client, clientId, contact, location, city, type, status, projectBudget, startDate, expectedDate, photoUrl } = req.body;
 
     const site = await Site.findById(req.params.id);
     if (!site) {
@@ -266,6 +287,7 @@ exports.updateSite = async (req, res, next) => {
 
     if (name) site.name = name;
     if (client) site.client = client;
+    if (clientId !== undefined) site.clientId = clientId || null;
     if (contact !== undefined) site.contact = contact;
     if (location !== undefined) site.location = location;
     if (city !== undefined) site.city = city;

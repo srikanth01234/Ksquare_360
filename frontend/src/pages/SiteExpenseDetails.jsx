@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
 import { expenseApi, paymentApi } from '../services/api';
+import { buildExpensePayload } from '../utils/expensePayload';
 
 export default function SiteExpenseDetails({
   site = null,
@@ -48,6 +49,9 @@ export default function SiteExpenseDetails({
   const [loading, setLoading] = useState(true);
   const [viewingExpense, setViewingExpense] = useState(null);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [payingExpense, setPayingExpense] = useState(null);
+  const [payForm, setPayForm] = useState({ amount: '', paymentMode: 'Cash', referenceNo: '', notes: '' });
+  const [payError, setPayError] = useState('');
   const [editForm, setEditForm] = useState({
     description: '',
     supplierName: '',
@@ -117,9 +121,13 @@ export default function SiteExpenseDetails({
           unit: e.unit || (e.category === 'Labour' ? 'Workers' : 'Units'),
           rate: typeof e.rate === 'number' ? `₹${e.rate.toLocaleString('en-IN')}` : (e.rate ? `₹${e.rate}` : '-'),
           amountNum: rawAmt,
+          calculatedAmount: e.calculatedAmount || rawAmt,
+          billingAmount: e.billingAmount ?? null,
+          paidAmount: e.paidAmount !== undefined ? e.paidAmount : (e.paymentStatus === 'Paid' ? rawAmt : 0),
+          pendingAmount: e.pendingAmount !== undefined ? e.pendingAmount : (e.paymentStatus === 'Pending' ? rawAmt : 0),
           amount: `₹ ${rawAmt.toLocaleString('en-IN')}`,
           payment: e.paymentStatus || 'Paid',
-          paymentMode: e.paymentMode || 'Cash',
+          paymentMode: e.paymentMode || '',
           isAdditionalWork: isAddWork,
           expenseType: isAddWork ? 'ADDITIONAL_WORK' : 'NORMAL',
           subCategory: e.subCategory || '',
@@ -139,41 +147,12 @@ export default function SiteExpenseDetails({
 
   const handleAddExpense = async (newExp) => {
     try {
-      const sId = currentSite._id || currentSite.id;
-      const rawAmt = typeof newExp.totalExpenseAmount === 'number'
-        ? newExp.totalExpenseAmount
-        : parseFloat(String(newExp.amount || '').replace(/[^\d.]/g, '')) || 0;
-
-      const isAddWork = Boolean(newExp.isAdditionalWork || newExp.category === 'Additional Work');
-
-      await expenseApi.create({
-        siteId: sId,
-        site: sId,
-        siteName: currentSite.name,
-        siteCode: currentSite.code,
-        category: newExp.category,
-        subCategory: newExp.subCategory || (isAddWork ? 'Materials' : newExp.category),
-        expenseType: newExp.expenseType || (isAddWork ? 'ADDITIONAL_WORK' : 'NORMAL'),
-        isAdditionalWork: isAddWork,
-        billableToClient: Boolean(newExp.billableToClient),
-        description: newExp.description,
-        materialName: newExp.materialName || '',
-        supplierName: newExp.supplierName || newExp.supplier || '-',
-        invoiceNo: newExp.invoiceNo || '',
-        amount: rawAmt,
-        quantity: newExp.quantity,
-        unit: newExp.unit,
-        rate: newExp.rate,
-        paymentStatus: newExp.paymentStatus || 'Paid',
-        paymentMode: newExp.paymentMethod === 'UPI' ? 'UPI (GPay)' : (newExp.paymentMode || 'Cash'),
-        date: newExp.date || new Date().toISOString(),
-        items: newExp.materialItems || newExp.items || [],
-        receiptUrl: newExp.receiptUrl || newExp.paymentScreenshot || '',
-        notes: newExp.notes || '',
-      });
+      const payload = buildExpensePayload(newExp, currentSite);
+      await expenseApi.create(payload);
       await loadSiteExpenses();
     } catch (err) {
       console.warn('Could not save expense in backend:', err.message);
+      alert(`Could not save expense: ${err.message}`);
     }
   };
 
@@ -187,38 +166,59 @@ export default function SiteExpenseDetails({
     }
   };
 
-  const handleClearPayment = async (row) => {
-    if (!window.confirm(`Record outgoing payment and mark "${row.material}" as Paid?`)) return;
+  const handleClearPayment = (row) => {
+    const outstanding = row.pendingAmount !== undefined && row.pendingAmount > 0
+      ? row.pendingAmount
+      : Math.max(0, (row.amountNum || 0) - (row.paidAmount || 0));
+    setPayingExpense({ ...row, outstanding });
+    setPayForm({
+      amount: String(outstanding),
+      paymentMode: 'Cash',
+      referenceNo: '',
+      notes: '',
+    });
+    setPayError('');
+  };
+
+  const handleConfirmRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!payingExpense) return;
+    const payAmt = parseFloat(payForm.amount);
+    const maxAllowed = payingExpense.outstanding || 0;
+    if (isNaN(payAmt) || payAmt <= 0) {
+      setPayError('Payment amount must be greater than ₹0.');
+      return;
+    }
+    if (payAmt > maxAllowed) {
+      setPayError(`Payment amount cannot exceed remaining outstanding amount (₹${maxAllowed.toLocaleString('en-IN')}).`);
+      return;
+    }
     try {
-      const amt = row.amountNum || parseFloat(String(row.amount).replace(/[^0-9.]/g, '')) || 0;
       await paymentApi.create({
         flowType: 'OUTGOING',
         siteId: currentSite._id || currentSite.id,
         siteName: currentSite.name,
         siteCode: currentSite.code,
-        expenseId: row._id || row.id,
-        partyName: row.supplier && row.supplier !== '-' ? row.supplier : row.material,
+        expenseId: payingExpense._id || payingExpense.id,
+        partyName: payingExpense.supplier && payingExpense.supplier !== '-' ? payingExpense.supplier : payingExpense.material,
         category:
-          row.category === 'Materials'
+          payingExpense.category === 'Materials'
             ? 'Materials'
-            : row.category === 'Labour'
+            : payingExpense.category === 'Labour'
             ? 'Labour Wages'
-            : row.category === 'Rental'
+            : payingExpense.category === 'Rental'
             ? 'Machinery Rental'
             : 'Other',
-        amount: amt,
-        paymentMode: 'Bank Transfer (NEFT)',
-        referenceNo: `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
-        invoiceRef: `Settlement for ${row.material}`,
+        amount: payAmt,
+        paymentMode: payForm.paymentMode || 'Cash',
+        referenceNo: payForm.referenceNo || `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
+        invoiceRef: `Settlement for ${payingExpense.material}`,
+        notes: payForm.notes || '',
       });
-
-      // Synchronously mark as Paid in Expense document
-      if (row._id || row.id) {
-        await expenseApi.update(row._id || row.id, { paymentStatus: 'Paid' });
-      }
+      setPayingExpense(null);
       await loadSiteExpenses();
     } catch (err) {
-      console.warn('Error clearing payment for expense:', err.message);
+      setPayError(err?.message || 'Could not record payment.');
     }
   };
 
@@ -287,10 +287,13 @@ export default function SiteExpenseDetails({
     document.body.removeChild(link);
   };
 
-  // Calculations from live site expenses
+  // Calculations from live site expenses (accurately counting Partial payments)
   const totalExpenses = siteExpenses.reduce((sum, e) => sum + (e.amountNum || 0), 0);
-  const paidExpenses = siteExpenses.filter((e) => e.payment === 'Paid');
-  const paidAmount = paidExpenses.reduce((sum, e) => sum + (e.amountNum || 0), 0);
+  const paidAmount = siteExpenses.reduce((sum, e) => {
+    if (e.payment === 'Paid') return sum + (e.paidAmount > 0 ? e.paidAmount : e.amountNum || 0);
+    if (e.payment === 'Partial') return sum + (e.paidAmount || 0);
+    return sum;
+  }, 0);
   const pendingAmount = Math.max(0, totalExpenses - paidAmount);
   const paidPercentage = totalExpenses > 0 ? Math.round((paidAmount / totalExpenses) * 100) : 0;
   const pendingPercentage = totalExpenses > 0 ? 100 - paidPercentage : 0;
@@ -663,13 +666,23 @@ export default function SiteExpenseDetails({
                       <td className="py-3.5 px-4 text-right font-medium text-slate-700">
                         {row.rate}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-bold text-slate-900 whitespace-nowrap">
-                        {row.amount}
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="font-bold text-slate-900">{row.amount}</div>
+                        {row.payment === 'Partial' && (
+                          <div className="text-[10px] font-semibold mt-0.5 space-x-1.5">
+                            <span className="text-emerald-700">Paid: ₹{(row.paidAmount || 0).toLocaleString('en-IN')}</span>
+                            <span className="text-amber-700">Due: ₹{(row.pendingAmount || 0).toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         {row.payment === 'Paid' ? (
                           <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                             Paid
+                          </span>
+                        ) : row.payment === 'Partial' ? (
+                          <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
+                            Partial
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-3 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
@@ -762,22 +775,49 @@ export default function SiteExpenseDetails({
             {/* Modal Body */}
             <div className="p-6 space-y-4 text-xs">
               {/* Hero Amount Card */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Expense Amount</div>
-                  <div className="text-2xl font-black text-slate-900 mt-0.5">
-                    {viewingExpense.amount}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Final Billing / Expense Amount</div>
+                    <div className="text-2xl font-black text-slate-900 mt-0.5">
+                      {viewingExpense.amount}
+                    </div>
+                    {viewingExpense.calculatedAmount > 0 && viewingExpense.calculatedAmount !== viewingExpense.amountNum && (
+                      <div className="text-[11px] font-medium text-slate-500 mt-0.5">
+                        Calculated Ref: ₹ {Number(viewingExpense.calculatedAmount).toLocaleString('en-IN')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
+                      viewingExpense.payment === 'Paid'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : viewingExpense.payment === 'Partial'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {viewingExpense.payment}
+                    </span>
+                    {viewingExpense.payment !== 'Pending' && viewingExpense.paymentMode && (
+                      <div className="text-[11px] text-slate-500 mt-1 font-medium">Mode: {viewingExpense.paymentMode}</div>
+                    )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                    viewingExpense.payment === 'Paid'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {viewingExpense.payment}
-                  </span>
-                  <div className="text-[11px] text-slate-400 mt-1 font-medium">Mode: {viewingExpense.paymentMode || 'Cash'}</div>
+
+                {/* Paid vs Outstanding Breakdown */}
+                <div className="grid grid-cols-2 gap-2.5 pt-2.5 border-t border-slate-200">
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                    <div className="text-[10px] font-bold text-emerald-700 uppercase">Paid Amount</div>
+                    <div className="text-sm font-black text-emerald-900 mt-0.5">
+                      ₹ {(viewingExpense.paidAmount || 0).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                    <div className="text-[10px] font-bold text-amber-700 uppercase">Outstanding Amount</div>
+                    <div className="text-sm font-black text-amber-900 mt-0.5">
+                      ₹ {(viewingExpense.pendingAmount || 0).toLocaleString('en-IN')}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -983,6 +1023,123 @@ export default function SiteExpenseDetails({
                   className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/20 transition-all cursor-pointer"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record Partial / Remaining Payment Modal */}
+      {payingExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 my-8 overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-blue-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                  <CreditCard size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Record Expense Payment</h3>
+                  <p className="text-xs text-slate-500 truncate max-w-[240px]">{payingExpense.material}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayingExpense(null)}
+                className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmRecordPayment} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">Total Bill</div>
+                  <div className="text-xs font-black text-slate-900 mt-0.5">{payingExpense.amount}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-emerald-700 uppercase">Paid</div>
+                  <div className="text-xs font-black text-emerald-800 mt-0.5">
+                    ₹{(payingExpense.paidAmount || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-amber-700 uppercase">Outstanding</div>
+                  <div className="text-xs font-black text-amber-800 mt-0.5">
+                    ₹{(payingExpense.outstanding || 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Payment Amount (₹) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="1"
+                  max={payingExpense.outstanding}
+                  required
+                  value={payForm.amount}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  onChange={(e) => {
+                    setPayError('');
+                    setPayForm({ ...payForm, amount: e.target.value });
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Enter partial or full amount up to ₹{(payingExpense.outstanding || 0).toLocaleString('en-IN')}.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1.5">Payment Method *</label>
+                  <select
+                    value={payForm.paymentMode}
+                    onChange={(e) => setPayForm({ ...payForm, paymentMode: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="UPI (GPay)">UPI</option>
+                    <option value="Bank Transfer (NEFT)">Bank Transfer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1.5">Reference No.</label>
+                  <input
+                    type="text"
+                    placeholder="Optional UTR / Ref"
+                    value={payForm.referenceNo}
+                    onChange={(e) => setPayForm({ ...payForm, referenceNo: e.target.value })}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+              </div>
+
+              {payError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-bold">
+                  {payError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPayingExpense(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-600/20 cursor-pointer"
+                >
+                  Record Payment
                 </button>
               </div>
             </form>

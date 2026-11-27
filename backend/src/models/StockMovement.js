@@ -31,6 +31,21 @@ const stockMovementSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    variantType: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    variantSize: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    variantBrand: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     supplierName: {
       type: String,
       trim: true,

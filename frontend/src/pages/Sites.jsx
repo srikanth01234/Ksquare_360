@@ -4,7 +4,6 @@ import {
   HardHat,
   Clock,
   CheckCircle2,
-  Plus,
   Search,
   MapPin,
   Layers,
@@ -22,12 +21,12 @@ import AddSiteModal from '../components/AddSiteModal';
 import { siteApi } from '../services/api';
 
 export default function Sites({ onSelectSite = () => {} }) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSite, setEditingSite] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('All Locations');
   const [selectedType, setSelectedType] = useState('All Site Types');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
+  const [selectedDateRange, setSelectedDateRange] = useState('All Dates');
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
@@ -45,13 +44,23 @@ export default function Sites({ onSelectSite = () => {} }) {
       setLoading(true);
       const res = await siteApi.getAll();
       const list = res.data || res || [];
-      const formatted = list.map((s, idx) => ({
-        ...s,
-        id: s._id || s.id || String(idx + 1).padStart(2, '0'),
-        clientAvatar: s.client ? s.client[0].toUpperCase() : 'C',
-        budget: s.budget || (s.projectBudget ? `₹${Number(s.projectBudget).toLocaleString('en-IN')}` : '₹0'),
-        progress: s.progress ?? (s.status === 'Completed' ? 100 : s.status === 'On Hold' ? 30 : 15),
-      }));
+      const formatted = list.map((s, idx) => {
+        const budgetNum = Number(s.projectBudget ?? s.financials?.projectBudget ?? 0);
+        const clientPaidNum = Number(s.financials?.clientPaid ?? s.clientPaid ?? 0);
+        const computedProgress =
+          s.status === 'Completed'
+            ? 100
+            : budgetNum > 0
+            ? Math.min(100, Math.round((clientPaidNum / budgetNum) * 100))
+            : 0;
+        return {
+          ...s,
+          id: s._id || s.id || String(idx + 1).padStart(2, '0'),
+          clientAvatar: s.client ? s.client[0].toUpperCase() : 'C',
+          budget: s.budget || (budgetNum > 0 ? `₹${budgetNum.toLocaleString('en-IN')}` : '₹0'),
+          progress: s.progress ?? computedProgress,
+        };
+      });
       setSites(formatted);
     } catch (err) {
       console.warn('Could not fetch sites from backend, starting with clean list:', err.message);
@@ -118,9 +127,9 @@ export default function Sites({ onSelectSite = () => {} }) {
   // Reset pagination on filter or search changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedLocation, selectedType, selectedStatus]);
+  }, [searchQuery, selectedLocation, selectedType, selectedStatus, selectedDateRange]);
 
-  // Filtered sites by Search, Location, Type, and the 3 Site Statuses
+  // Filtered sites by Search, Location, Type, Date, and Status
   const filteredSites = sites.filter((site) => {
     const matchesSearch =
       site.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -138,7 +147,24 @@ export default function Sites({ onSelectSite = () => {} }) {
     const matchesStatus =
       selectedStatus === 'All Status' || site.status === selectedStatus;
 
-    return matchesSearch && matchesLocation && matchesType && matchesStatus;
+    let matchesDate = true;
+    if (selectedDateRange !== 'All Dates') {
+      const refDate = new Date(site.startDate || site.createdAt);
+      const now = new Date();
+      if (!isNaN(refDate.getTime())) {
+        if (selectedDateRange === 'This Month') {
+          matchesDate =
+            refDate.getMonth() === now.getMonth() &&
+            refDate.getFullYear() === now.getFullYear();
+        } else if (selectedDateRange === 'Last 3 Months') {
+          const threeMonthsAgo = new Date();
+          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+          matchesDate = refDate >= threeMonthsAgo;
+        }
+      }
+    }
+
+    return matchesSearch && matchesLocation && matchesType && matchesStatus && matchesDate;
   });
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / itemsPerPage));
@@ -149,7 +175,7 @@ export default function Sites({ onSelectSite = () => {} }) {
 
   return (
     <div className="p-6 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
-      {/* 1. Page Header & Add Button */}
+      {/* 1. Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-1.5 h-10 bg-blue-600 rounded-full" />
@@ -162,15 +188,6 @@ export default function Sites({ onSelectSite = () => {} }) {
             </p>
           </div>
         </div>
-
-        {/* Add New Site Button */}
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="self-start sm:self-auto flex items-center gap-2 bg-[#0072ff] hover:bg-blue-700 text-white rounded-xl px-5 py-2.5 text-xs md:text-sm font-semibold shadow-lg shadow-blue-600/25 transition-all cursor-pointer"
-        >
-          <Plus size={17} />
-          <span>Add New Site</span>
-        </button>
       </div>
 
       {/* 2. Stat Cards (Clickable Quick Filters) */}
@@ -317,11 +334,19 @@ export default function Sites({ onSelectSite = () => {} }) {
           </div>
 
           {/* Dates Filter */}
-          <button className="flex items-center gap-2 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 shadow-xs hover:border-slate-300">
-            <Calendar size={14} className="text-slate-400" />
-            <span>All Dates</span>
-            <ChevronDown size={13} className="text-slate-400" />
-          </button>
+          <div className="relative">
+            <select
+              value={selectedDateRange}
+              onChange={(e) => setSelectedDateRange(e.target.value)}
+              className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-xs cursor-pointer"
+            >
+              <option value="All Dates">All Dates</option>
+              <option value="This Month">This Month</option>
+              <option value="Last 3 Months">Last 3 Months</option>
+            </select>
+            <Calendar size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
         </div>
       </div>
 
@@ -348,7 +373,7 @@ export default function Sites({ onSelectSite = () => {} }) {
                   <td colSpan="9" className="py-12 text-center text-slate-400">
                     <Building2 className="w-10 h-10 mx-auto mb-2 text-slate-300 opacity-60" />
                     <p className="font-bold text-slate-700 text-sm">No construction sites found</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Click "Add New Site" above to create your first real project.</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Create a new site in Master Data → Sites to get started.</p>
                   </td>
                 </tr>
               ) : (
@@ -528,12 +553,11 @@ export default function Sites({ onSelectSite = () => {} }) {
         </div>
       </div>
 
-      {/* Add / Edit Site Modal */}
+      {/* Edit Site Modal */}
       <AddSiteModal
-        isOpen={isModalOpen || !!editingSite}
+        isOpen={!!editingSite}
         siteToEdit={editingSite}
         onClose={() => {
-          setIsModalOpen(false);
           setEditingSite(null);
         }}
         onAddSite={handleAddSite}

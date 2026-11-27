@@ -42,6 +42,7 @@ export default function Labour() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSite, setSelectedSite] = useState('All Sites');
   const [selectedType, setSelectedType] = useState('All Labour Types');
+  const [engagementFilter, setEngagementFilter] = useState('All Labour'); // 'All Labour' | 'Daily Wage Labour' | 'Labour Contracts'
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'grid'
   const [viewingLabour, setViewingLabour] = useState(null); // 'View Labour details' Modal
 
@@ -73,12 +74,16 @@ export default function Labour() {
         return {
           ...l,
           id: l._id || l.id || String(idx + 1).padStart(2, '0'),
-          type: l.workerType || l.category || l.type || 'Mason',
+          engagementType: l.engagementType || 'Daily Wage',
+          type: l.engagementType === 'Labour Contract' ? (l.contractWorkType || l.workerType || 'Labour Contract') : (l.workerType || l.category || l.type || 'Mason'),
           siteName: siteName || 'Unassigned',
           siteCode: siteCode,
           dailyWageNum: typeof l.dailyWage === 'number' ? l.dailyWage : parseFloat(String(l.dailyWage || 0).replace(/[^\d.]/g, '')) || 0,
           dailyWage: typeof l.dailyWage === 'number' ? `₹${l.dailyWage.toLocaleString('en-IN')}` : (l.dailyWage || '₹0'),
           otRate: typeof l.overtimeRate === 'number' ? `₹${l.overtimeRate.toLocaleString('en-IN')}` : (l.otRate || '₹0'),
+          totalAreaSqft: Number(l.totalAreaSqft || 0),
+          ratePerSqft: Number(l.ratePerSqft || 0),
+          totalContractAmount: Number(l.totalContractAmount || 0),
           joiningDate: l.joiningDate ? new Date(l.joiningDate).toLocaleDateString('en-IN') : 'Recent',
           status: l.status || 'Active',
           avatar: l.photoUrl || l.avatar || 'https://images.unsplash.com/photo-1541888946425-d0fbb18086f6?auto=format&fit=crop&w=200&q=80',
@@ -93,13 +98,23 @@ export default function Labour() {
 
   const handleAddLabour = async (newWorker) => {
     try {
+      const isContract = newWorker.engagementType === 'Labour Contract';
       await labourApi.create({
+        engagementType: isContract ? 'Labour Contract' : 'Daily Wage',
         name: newWorker.name,
         workerType: newWorker.workerType || newWorker.labourType,
+        contractWorkType: isContract ? newWorker.contractWorkType || newWorker.workerType : '',
         phone: newWorker.phone,
         currentSite: newWorker.currentSite || newWorker.siteId || null,
-        dailyWage: typeof newWorker.dailyWage === 'number' ? newWorker.dailyWage : parseFloat(String(newWorker.dailyWage || '').replace(/[^\d.]/g, '')) || 800,
-        overtimeRate: typeof newWorker.otRate === 'number' ? newWorker.otRate : parseFloat(String(newWorker.otRate || '').replace(/[^\d.]/g, '')) || 100,
+        dailyWage: isContract ? 0 : (typeof newWorker.dailyWage === 'number' ? newWorker.dailyWage : parseFloat(String(newWorker.dailyWage || '').replace(/[^\d.]/g, '')) || 800),
+        overtimeRate: isContract ? 0 : (typeof newWorker.otRate === 'number' ? newWorker.otRate : parseFloat(String(newWorker.otRate || '').replace(/[^\d.]/g, '')) || 100),
+        totalAreaSqft: isContract ? Number(newWorker.totalAreaSqft || 0) : 0,
+        ratePerSqft: isContract ? Number(newWorker.ratePerSqft || 0) : 0,
+        totalContractAmount: isContract ? Number(newWorker.totalContractAmount || 0) : 0,
+        contractStartDate: isContract ? newWorker.contractStartDate : null,
+        expectedCompletionDate: isContract ? newWorker.expectedCompletionDate : null,
+        scopeNotes: isContract ? newWorker.scopeNotes || '' : '',
+        joiningDate: newWorker.joiningDate || undefined,
         address: newWorker.address || '',
         aadhaarNumber: newWorker.aadhaarNumber || '',
         panNumber: newWorker.panNumber || '',
@@ -119,13 +134,23 @@ export default function Labour() {
 
   const handleEditLabour = async (id, updatedWorker) => {
     try {
+      const isContract = updatedWorker.engagementType === 'Labour Contract';
       await labourApi.update(id, {
+        engagementType: isContract ? 'Labour Contract' : 'Daily Wage',
         name: updatedWorker.name,
         workerType: updatedWorker.workerType || updatedWorker.labourType,
+        contractWorkType: isContract ? updatedWorker.contractWorkType || updatedWorker.workerType : '',
         phone: updatedWorker.phone,
         currentSite: updatedWorker.currentSite || updatedWorker.siteId || null,
-        dailyWage: typeof updatedWorker.dailyWage === 'number' ? updatedWorker.dailyWage : parseFloat(String(updatedWorker.dailyWage || '').replace(/[^\d.]/g, '')) || 800,
-        overtimeRate: typeof updatedWorker.otRate === 'number' ? updatedWorker.otRate : parseFloat(String(updatedWorker.otRate || updatedWorker.overtimeRate || '').replace(/[^\d.]/g, '')) || 100,
+        dailyWage: isContract ? 0 : (typeof updatedWorker.dailyWage === 'number' ? updatedWorker.dailyWage : parseFloat(String(updatedWorker.dailyWage || '').replace(/[^\d.]/g, '')) || 800),
+        overtimeRate: isContract ? 0 : (typeof updatedWorker.otRate === 'number' ? updatedWorker.otRate : parseFloat(String(updatedWorker.otRate || updatedWorker.overtimeRate || '').replace(/[^\d.]/g, '')) || 100),
+        totalAreaSqft: isContract ? Number(updatedWorker.totalAreaSqft || 0) : 0,
+        ratePerSqft: isContract ? Number(updatedWorker.ratePerSqft || 0) : 0,
+        totalContractAmount: isContract ? Number(updatedWorker.totalContractAmount || 0) : 0,
+        contractStartDate: isContract ? updatedWorker.contractStartDate : null,
+        expectedCompletionDate: isContract ? updatedWorker.expectedCompletionDate : null,
+        scopeNotes: isContract ? updatedWorker.scopeNotes || '' : '',
+        joiningDate: updatedWorker.joiningDate || undefined,
         address: updatedWorker.address || '',
         aadhaarNumber: updatedWorker.aadhaarNumber || '',
         panNumber: updatedWorker.panNumber || '',
@@ -158,11 +183,19 @@ export default function Labour() {
     const sName = worker.siteName || '';
     const name = String(worker.name || '').toLowerCase();
     const phone = String(worker.phone || '');
+    const workType = String(worker.type || '').toLowerCase();
     const query = searchQuery.toLowerCase();
+    const isContract = worker.engagementType === 'Labour Contract';
+
+    const matchesEngagement =
+      engagementFilter === 'All Labour' ||
+      (engagementFilter === 'Daily Wage Labour' && !isContract) ||
+      (engagementFilter === 'Labour Contracts' && isContract);
 
     const matchesSearch =
       name.includes(query) ||
       phone.includes(query) ||
+      workType.includes(query) ||
       sName.toLowerCase().includes(query);
 
     const matchesSite =
@@ -171,7 +204,7 @@ export default function Labour() {
     const matchesType =
       selectedType === 'All Labour Types' || worker.type === selectedType;
 
-    return matchesSearch && matchesSite && matchesType;
+    return matchesEngagement && matchesSearch && matchesSite && matchesType;
   });
 
   return (
@@ -274,7 +307,44 @@ export default function Labour() {
         </div>
       </div>
 
-      {/* 3. Filter and Search Bar */}
+      {/* 3. Engagement Filter Tabs (All Labour | Daily Wage Labour | Labour Contracts) */}
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { label: 'All Labour', count: labourList.length },
+          {
+            label: 'Daily Wage Labour',
+            count: labourList.filter((w) => w.engagementType !== 'Labour Contract').length,
+          },
+          {
+            label: 'Labour Contracts',
+            count: labourList.filter((w) => w.engagementType === 'Labour Contract').length,
+          },
+        ].map((tab) => {
+          const isActive = engagementFilter === tab.label;
+          return (
+            <button
+              key={tab.label}
+              onClick={() => setEngagementFilter(tab.label)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                isActive
+                  ? 'bg-[#008744] text-white shadow-md shadow-emerald-800/20'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 3b. Filter and Search Bar */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         {/* Search */}
         <div className="relative flex-1">
@@ -398,23 +468,25 @@ export default function Labour() {
             <thead>
               <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/60">
                 <th className="py-3 px-4 w-12 text-center">#</th>
-                <th className="py-3 px-4">Worker</th>
-                <th className="py-3 px-4">Labour Type</th>
-                <th className="py-3 px-4">Daily Wage</th>
-                <th className="py-3 px-4">OT Rate</th>
+                <th className="py-3 px-4">Worker / Contractor</th>
+                <th className="py-3 px-4">Type</th>
+                <th className="py-3 px-4">Rate</th>
+                <th className="py-3 px-4">OT / Contract Value</th>
                 <th className="py-3 px-4 text-center">Status</th>
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredLabour.map((worker) => (
+              {filteredLabour.map((worker, idx) => {
+                const isContract = worker.engagementType === 'Labour Contract';
+                return (
                 <tr key={worker.id} className="hover:bg-slate-50/70 transition-colors">
                   {/* Number */}
                   <td className="py-3.5 px-4 text-center font-medium text-slate-400">
-                    {worker.id}
+                    {idx + 1}
                   </td>
 
-                  {/* Worker Name & Phone */}
+                  {/* Worker / Contractor Name & Phone */}
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-3">
                       <img
@@ -432,26 +504,48 @@ export default function Labour() {
                     </div>
                   </td>
 
-                  {/* Labour Type */}
+                  {/* Type (Daily Wage vs Labour Contract) */}
                   <td className="py-3.5 px-4">
-                    <span
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
-                        worker.typeColor || 'bg-blue-50 text-blue-700 border-blue-200'
-                      }`}
-                    >
-                      <Briefcase size={12} />
-                      <span>{worker.type}</span>
-                    </span>
+                    <div className="flex flex-col items-start gap-1">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                          isContract
+                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        }`}
+                      >
+                        <Briefcase size={11} />
+                        <span>{isContract ? 'Labour Contract' : 'Daily Wage'}</span>
+                      </span>
+                      <span className="text-[11px] font-medium text-slate-500 pl-1">
+                        {worker.type}
+                      </span>
+                    </div>
                   </td>
 
-                  {/* Daily Wage */}
+                  {/* Rate */}
                   <td className="py-3.5 px-4 font-bold text-slate-900">
-                    {worker.dailyWage}
+                    {isContract ? (
+                      <span>₹{Number(worker.ratePerSqft || 0).toLocaleString('en-IN')}/sq.ft</span>
+                    ) : (
+                      <span>{worker.dailyWage}/day</span>
+                    )}
                   </td>
 
-                  {/* OT Rate */}
+                  {/* OT Rate / Contract Value */}
                   <td className="py-3.5 px-4 font-semibold text-slate-700">
-                    {worker.otRate}
+                    {isContract ? (
+                      <div>
+                        <div className="font-bold text-blue-700">
+                          ₹{Number(worker.totalContractAmount || 0).toLocaleString('en-IN')}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {Number(worker.totalAreaSqft || 0).toLocaleString('en-IN')} Sq.ft
+                        </div>
+                      </div>
+                    ) : (
+                      <span>{worker.otRate}/hr</span>
+                    )}
                   </td>
 
                   {/* Status */}
@@ -496,7 +590,8 @@ export default function Labour() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -665,41 +760,85 @@ export default function Labour() {
                 </div>
               </div>
 
-              {/* Wage & Deployment */}
-              <div>
-                <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
-                  Wage Rates & Enrollment
-                </h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase">
-                      Daily Wage
-                    </span>
-                    <div className="text-sm font-black text-emerald-900 mt-0.5">
-                      {viewingLabour.dailyWage}
+              {/* Wage & Deployment OR Contract Details */}
+              {viewingLabour.engagementType === 'Labour Contract' ? (
+                <div>
+                  <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                    Contract Details & Pricing
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/80">
+                      <span className="text-[10px] font-bold text-blue-800 uppercase">
+                        Work Area
+                      </span>
+                      <div className="text-sm font-black text-blue-900 mt-0.5">
+                        {Number(viewingLabour.totalAreaSqft || 0).toLocaleString('en-IN')} Sq.ft
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-sky-50/70 border border-sky-200/80">
+                      <span className="text-[10px] font-bold text-sky-800 uppercase">
+                        Rate / Sq.ft
+                      </span>
+                      <div className="text-sm font-black text-sky-900 mt-0.5">
+                        ₹{Number(viewingLabour.ratePerSqft || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+                      <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                        Contract Value
+                      </span>
+                      <div className="text-sm font-black text-emerald-900 mt-0.5">
+                        ₹{Number(viewingLabour.totalContractAmount || 0).toLocaleString('en-IN')}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="p-3 rounded-xl bg-sky-50/70 border border-sky-200/80">
-                    <span className="text-[10px] font-bold text-sky-800 uppercase">
-                      OT Rate
-                    </span>
-                    <div className="text-sm font-black text-sky-900 mt-0.5">
-                      {viewingLabour.otRate}{' '}
-                      <span className="text-[10px] font-semibold">/hr</span>
+                  {viewingLabour.scopeNotes && (
+                    <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">
+                        Scope of Work / Notes
+                      </span>
+                      <div className="text-xs text-slate-700 mt-1">{viewingLabour.scopeNotes}</div>
                     </div>
-                  </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                    Wage Rates & Enrollment
+                  </h4>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
+                      <span className="text-[10px] font-bold text-emerald-800 uppercase">
+                        Daily Wage
+                      </span>
+                      <div className="text-sm font-black text-emerald-900 mt-0.5">
+                        {viewingLabour.dailyWage}
+                      </div>
+                    </div>
 
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase">
-                      Joined On
-                    </span>
-                    <div className="text-xs font-bold text-slate-900 mt-0.5">
-                      {viewingLabour.joiningDate}
+                    <div className="p-3 rounded-xl bg-sky-50/70 border border-sky-200/80">
+                      <span className="text-[10px] font-bold text-sky-800 uppercase">
+                        OT Rate
+                      </span>
+                      <div className="text-sm font-black text-sky-900 mt-0.5">
+                        {viewingLabour.otRate}{' '}
+                        <span className="text-[10px] font-semibold">/hr</span>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">
+                        Joined On
+                      </span>
+                      <div className="text-xs font-bold text-slate-900 mt-0.5">
+                        {viewingLabour.joiningDate}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Footer */}

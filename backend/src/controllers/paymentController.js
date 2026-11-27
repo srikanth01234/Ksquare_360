@@ -1,6 +1,10 @@
 const Payment = require('../models/Payment');
 const Site = require('../models/Site');
 const Expense = require('../models/Expense');
+const {
+  recalculateExpensePaymentState,
+  mapPaymentCategoryToExpenseCategory,
+} = require('../utils/expenseSync');
 
 // @desc    Get all pending expenses that require outgoing payments
 // @route   GET /api/payments/pending-expenses
@@ -171,10 +175,20 @@ exports.createPayment = async (req, res, next) => {
     const targetSiteId = siteId || req.body.site;
     if (targetSiteId) {
       siteDoc = await Site.findById(targetSiteId).catch(() => null);
-      if (siteDoc) {
-        siteName = siteDoc.name;
-        siteCode = siteDoc.code;
+    }
+    if (!siteDoc && (siteCode || siteName)) {
+      const cleanName = String(siteName || '').split(' (')[0].trim();
+      const extractedCode = siteCode || (String(siteName || '').match(/\(([^)]+)\)/)?.[1] || '').trim();
+      if (extractedCode) {
+        siteDoc = await Site.findOne({ code: extractedCode.toUpperCase() }).catch(() => null);
       }
+      if (!siteDoc && cleanName) {
+        siteDoc = await Site.findOne({ name: cleanName }).catch(() => null);
+      }
+    }
+    if (siteDoc) {
+      siteName = siteDoc.name;
+      siteCode = siteDoc.code;
     }
 
     let receiptUrl = '';
@@ -188,6 +202,25 @@ exports.createPayment = async (req, res, next) => {
     let expenseDoc = null;
     if (targetExpenseId) {
       expenseDoc = await Expense.findById(targetExpenseId).catch(() => null);
+      if (expenseDoc && flowType.toUpperCase() === 'OUTGOING') {
+        const payAmt = parseFloat(amount) || 0;
+        const outstanding = expenseDoc.pendingAmount !== undefined
+          ? expenseDoc.pendingAmount
+          : Math.max(0, (expenseDoc.amount || 0) - (expenseDoc.paidAmount || 0));
+
+        if (payAmt <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Payment amount must be greater than 0.',
+          });
+        }
+        if (payAmt > outstanding) {
+          return res.status(400).json({
+            success: false,
+            message: `Payment amount (₹${payAmt}) cannot exceed remaining outstanding amount (₹${outstanding}).`,
+          });
+        }
+      }
     }
 
     const payment = await Payment.create({
@@ -208,16 +241,9 @@ exports.createPayment = async (req, res, next) => {
       notes: notes || '',
     });
 
-    // If linked to an Expense and flow is OUTGOING, update the Expense's paid/pending status
+    // Sync with Site Expenses:
+    // 1. If linked to an existing Expense and flow is OUTGOING, recalculate its paid/pending/status
     if (expenseDoc && flowType.toUpperCase() === 'OUTGOING') {
-      const paidAmt = parseFloat(amount) || 0;
-      expenseDoc.paidAmount = (expenseDoc.paidAmount || 0) + paidAmt;
-      expenseDoc.pendingAmount = Math.max(0, (expenseDoc.amount || 0) - expenseDoc.paidAmount);
-      if (expenseDoc.pendingAmount <= 0) {
-        expenseDoc.paymentStatus = 'Paid';
-      } else {
-        expenseDoc.paymentStatus = 'Partial';
-      }
       if (!expenseDoc.referenceNo) {
         expenseDoc.referenceNo = payment.referenceNo;
       }
@@ -225,6 +251,42 @@ exports.createPayment = async (req, res, next) => {
         expenseDoc.paymentMode = payment.paymentMode;
       }
       await expenseDoc.save();
+      await recalculateExpensePaymentState(expenseDoc._id);
+    } else if (
+      !expenseDoc &&
+      flowType.toUpperCase() === 'OUTGOING' &&
+      siteDoc &&
+      req.body.recordAsSiteExpense !== false &&
+      req.body.recordAsSiteExpense !== 'false'
+    ) {
+      // 2. Direct outgoing payment for a site: auto-create matching Paid Site Expense so Site Expenses stays in sync
+      const paidAmt = parseFloat(amount) || 0;
+      const expCat = mapPaymentCategoryToExpenseCategory(category);
+      const createdExp = await Expense.create({
+        site: siteDoc._id,
+        siteName: siteDoc.name,
+        siteCode: siteDoc.code,
+        category: expCat,
+        subCategory: expCat,
+        expenseType: 'NORMAL',
+        isAdditionalWork: false,
+        billableToClient: false,
+        description: invoiceRef || notes || `${category || expCat} Payment (${partyName})`,
+        supplierName: partyName || '-',
+        amount: paidAmt,
+        calculatedAmount: paidAmt,
+        paymentStatus: 'Paid',
+        paidAmount: paidAmt,
+        pendingAmount: 0,
+        paymentMode: payment.paymentMode,
+        referenceNo: payment.referenceNo,
+        invoiceBillNo: invoiceRef || '',
+        receiptUrl,
+        date: date ? new Date(date) : new Date(),
+        notes: notes || 'Recorded via Payments Management',
+      });
+      payment.expense = createdExp._id;
+      await payment.save();
     }
 
     res.status(201).json({
@@ -260,6 +322,29 @@ exports.updatePayment = async (req, res, next) => {
       receiptUrl,
     } = req.body;
 
+    const newAmount = amount !== undefined ? parseFloat(amount) : payment.amount;
+    if (payment.expense && payment.flowType === 'OUTGOING' && amount !== undefined) {
+      if (isNaN(newAmount) || newAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'Payment amount must be greater than 0.' });
+      }
+      const linkedExpense = await Expense.findById(payment.expense);
+      if (linkedExpense) {
+        const otherPayments = await Payment.find({
+          expense: linkedExpense._id,
+          _id: { $ne: payment._id },
+          flowType: 'OUTGOING',
+          status: { $in: ['Cleared', 'Paid'] },
+        });
+        const otherSum = otherPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        if (otherSum + newAmount > linkedExpense.amount) {
+          return res.status(400).json({
+            success: false,
+            message: `Updated payment amount (₹${newAmount}) plus other payments (₹${otherSum}) exceeds expense total (₹${linkedExpense.amount}).`,
+          });
+        }
+      }
+    }
+
     if (partyName) payment.partyName = partyName;
     if (category) payment.category = category;
     if (status) payment.status = status;
@@ -268,7 +353,7 @@ exports.updatePayment = async (req, res, next) => {
     if (invoiceRef !== undefined) payment.invoiceRef = invoiceRef;
     if (date) payment.date = new Date(date);
     if (notes !== undefined) payment.notes = notes;
-    if (amount !== undefined) payment.amount = parseFloat(amount);
+    if (amount !== undefined) payment.amount = newAmount;
     if (receiptUrl !== undefined) payment.receiptUrl = receiptUrl;
 
     if (req.file) {
@@ -276,6 +361,10 @@ exports.updatePayment = async (req, res, next) => {
     }
 
     await payment.save();
+
+    if (payment.expense && payment.flowType === 'OUTGOING') {
+      await recalculateExpensePaymentState(payment.expense);
+    }
 
     res.status(200).json({
       success: true,
@@ -297,7 +386,14 @@ exports.deletePayment = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Payment record not found' });
     }
 
+    const linkedExpenseId = payment.expense;
+    const isOutgoing = payment.flowType === 'OUTGOING';
+
     await Payment.findByIdAndDelete(req.params.id);
+
+    if (linkedExpenseId && isOutgoing) {
+      await recalculateExpensePaymentState(linkedExpenseId);
+    }
 
     res.status(200).json({
       success: true,

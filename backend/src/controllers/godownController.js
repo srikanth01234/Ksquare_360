@@ -3,6 +3,15 @@ const StockMovement = require('../models/StockMovement');
 const MaterialMaster = require('../models/MaterialMaster');
 const Site = require('../models/Site');
 
+// Strict positive whole number validator (>= 1, no 0, no negatives, no decimals)
+function parsePositiveWholeNumber(val) {
+  if (val === undefined || val === null || val === '') return null;
+  const str = String(val).trim();
+  if (!/^[1-9]\d*$/.test(str)) return null;
+  const num = Number(str);
+  return Number.isSafeInteger(num) && num >= 1 ? num : null;
+}
+
 // @desc    Get live Godown inventory stock with financial valuation & low-stock alerts
 // @route   GET /api/godown/stocks
 // @access  Public
@@ -82,12 +91,39 @@ exports.getGodownStocks = async (req, res, next) => {
 // @access  Public
 exports.recordStockInward = async (req, res, next) => {
   try {
-    const { materialId, quantity, unit, unitPrice, supplierName, notes, date } = req.body;
+    const {
+      materialId,
+      quantity,
+      unit,
+      unitPrice,
+      supplierName,
+      notes,
+      date,
+      variantType,
+      variantSize,
+      variantBrand,
+    } = req.body;
 
-    if (!materialId || !quantity || quantity <= 0) {
+    if (!materialId) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide valid materialId and quantity greater than 0',
+        message: 'Please provide a valid materialId',
+      });
+    }
+
+    const inwardQty = parsePositiveWholeNumber(quantity);
+    if (inwardQty === null) {
+      return res.status(400).json({
+        success: false,
+        message: 'Quantity must be a positive whole number greater than 0 (no decimals or negatives).',
+      });
+    }
+
+    const pricePerUnit = parsePositiveWholeNumber(unitPrice);
+    if (pricePerUnit === null) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unit price must be a positive whole number greater than 0 (no decimals or negatives).',
       });
     }
 
@@ -103,8 +139,6 @@ exports.recordStockInward = async (req, res, next) => {
       });
     }
 
-    const inwardQty = parseFloat(quantity);
-    const pricePerUnit = unitPrice !== undefined ? parseFloat(unitPrice) : material.defaultPrice;
     const totalAmount = inwardQty * pricePerUnit;
 
     // 1. Update or create GodownStock
@@ -129,6 +163,9 @@ exports.recordStockInward = async (req, res, next) => {
       unit: unit || material.unit,
       unitPrice: pricePerUnit,
       totalAmount,
+      variantType: variantType || '',
+      variantSize: variantSize || '',
+      variantBrand: variantBrand || '',
       supplierName: supplierName || 'Direct Vendor',
       notes: notes || '',
       date: date ? new Date(date) : new Date(),
@@ -136,7 +173,7 @@ exports.recordStockInward = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: `Successfully received ${inwardQty} ${material.unit} of ${material.name} into godown`,
+      message: `Successfully received ${inwardQty} ${unit || material.unit} of ${material.name} into godown`,
       data: {
         currentStock: stock.currentStock,
         movement,
@@ -152,12 +189,40 @@ exports.recordStockInward = async (req, res, next) => {
 // @access  Public
 exports.recordStockOutward = async (req, res, next) => {
   try {
-    const { materialId, siteId, quantity, receivedBy, notes, date } = req.body;
+    const {
+      materialId,
+      siteId,
+      quantity,
+      unit,
+      unitPrice,
+      receivedBy,
+      notes,
+      date,
+      variantType,
+      variantSize,
+      variantBrand,
+    } = req.body;
 
-    if (!materialId || !siteId || !quantity || quantity <= 0) {
+    if (!materialId || !siteId) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide materialId, siteId, and valid quantity greater than 0',
+        message: 'Please provide materialId and siteId',
+      });
+    }
+
+    const outwardQty = parsePositiveWholeNumber(quantity);
+    if (outwardQty === null) {
+      return res.status(400).json({
+        success: false,
+        message: 'Quantity must be a positive whole number greater than 0 (no decimals or negatives).',
+      });
+    }
+
+    const pricePerUnit = parsePositiveWholeNumber(unitPrice);
+    if (pricePerUnit === null) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unit price must be a positive whole number greater than 0 (no decimals or negatives).',
       });
     }
 
@@ -171,15 +236,13 @@ exports.recordStockOutward = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Construction site not found' });
     }
 
-    const outwardQty = parseFloat(quantity);
-
     // 1. Stock check: ensure sufficient stock exists
     let stock = await GodownStock.findOne({ material: material._id });
     if (!stock || stock.currentStock < outwardQty) {
       const available = stock ? stock.currentStock : 0;
       return res.status(400).json({
         success: false,
-        message: `Insufficient stock for ${material.name}. Requested: ${outwardQty} ${material.unit}, but only ${available} ${material.unit} available in godown.`,
+        message: `Insufficient stock for ${material.name}. Requested: ${outwardQty} ${unit || material.unit}, but only ${available} ${material.unit} available in godown.`,
       });
     }
 
@@ -188,16 +251,21 @@ exports.recordStockOutward = async (req, res, next) => {
     stock.lastUpdated = new Date();
     await stock.save();
 
-    // 3. Record Outward Movement with Site reference
+    const totalAmount = outwardQty * pricePerUnit;
+
+    // 3. Record Outward Movement with Site reference & independent outward pricing
     const movement = await StockMovement.create({
       movementType: 'OUTWARD',
       material: material._id,
       site: site._id,
       siteName: `${site.name} (${site.code})`,
       quantity: outwardQty,
-      unit: material.unit,
-      unitPrice: material.defaultPrice,
-      totalAmount: outwardQty * material.defaultPrice,
+      unit: unit || material.unit,
+      unitPrice: pricePerUnit,
+      totalAmount,
+      variantType: variantType || '',
+      variantSize: variantSize || '',
+      variantBrand: variantBrand || '',
       receivedBy: receivedBy || 'Site Supervisor',
       notes: notes || `Dispatched to site ${site.name}`,
       date: date ? new Date(date) : new Date(),
@@ -205,7 +273,7 @@ exports.recordStockOutward = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: `Successfully issued ${outwardQty} ${material.unit} of ${material.name} to ${site.name}`,
+      message: `Successfully issued ${outwardQty} ${unit || material.unit} of ${material.name} to ${site.name}`,
       data: {
         remainingStock: stock.currentStock,
         movement,
