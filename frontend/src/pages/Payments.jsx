@@ -35,9 +35,28 @@ import {
   Upload,
   Image as ImageIcon,
 } from 'lucide-react';
-import { paymentApi, siteApi } from '../services/api';
+import { getAllPages, paymentApi, siteApi } from '../services/api';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function Payments() {
+  const { getOptions } = useDropdowns();
+  const paymentModeOptions = getOptions('payments.modes', [
+    'Bank Transfer (NEFT)',
+    'Bank Transfer (RTGS)',
+    'UPI (GPay)',
+    'UPI (PhonePe)',
+    'Cash',
+    'Cheque',
+  ]);
+  const configuredOutgoingCategories = getOptions('payments.outgoingCategories', [
+    'Materials',
+    'Labour Wages',
+    'Vehicle Rental',
+    'Machinery Rental',
+    'Contractor',
+    'Other',
+  ]);
+  const outgoingCategoryOptions = [...new Set([...configuredOutgoingCategories, 'Additional Work'])];
   const [activeTab, setActiveTab] = useState('received'); // 'received' | 'outgoing'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSiteFilter, setSelectedSiteFilter] = useState('All Sites');
@@ -74,6 +93,8 @@ export default function Payments() {
   const [sitesList, setSitesList] = useState([]);
   const [pendingExpenses, setPendingExpenses] = useState([]);
   const [selectedPendingExpenseId, setSelectedPendingExpenseId] = useState('');
+  const [summary, setSummary] = useState({});
+  const [loadError, setLoadError] = useState('');
   const [loading, setLoading] = useState(true);
 
   // File upload refs & preview states
@@ -88,80 +109,71 @@ export default function Payments() {
 
   const loadAllData = async () => {
     setLoading(true);
-    await Promise.all([loadPayments(), loadSites(), loadPendingExpenses()]);
+    setLoadError('');
+    const results = await Promise.allSettled([loadPayments(), loadSites(), loadPendingExpenses()]);
+    if (results.some((result) => result.status === 'rejected')) {
+      setLoadError('Some payment data could not be refreshed. Try again.');
+    }
     setLoading(false);
   };
 
   const loadPendingExpenses = async () => {
-    try {
-      const res = await paymentApi.getPendingExpenses();
-      const list = res.data || res || [];
-      setPendingExpenses(list);
-    } catch (err) {
-      console.warn('Could not load pending expenses in Payments:', err.message);
-    }
+    const res = await paymentApi.getPendingExpenses();
+    setPendingExpenses(res.data);
   };
 
   const loadSites = async () => {
-    try {
-      const res = await siteApi.getAll();
-      const list = res.data || res || [];
-      setSitesList(list);
-    } catch (err) {
-      console.warn('Could not fetch sites in Payments:', err.message);
-    }
+    const res = await siteApi.getAll();
+    setSitesList(res.data);
   };
 
   const loadPayments = async () => {
-    try {
-      const res = await paymentApi.getAll();
-      const list = res.data || res || [];
-      const rec = [];
-      const out = [];
+    const [list, totals] = await Promise.all([
+      getAllPages(paymentApi.getAll),
+      paymentApi.getSummary(),
+    ]);
+    setSummary(totals.data);
+    const rec = [];
+    const out = [];
 
-      list.forEach((p, idx) => {
-        const item = {
-          ...p,
-          _id: p._id || p.id,
-          id: p.referenceNo || p.paymentNumber || p._id || `PAY-${idx + 1}`,
-          displayId: p.paymentNumber || p.referenceNo || `PAY-${String(idx + 1).padStart(3, '0')}`,
-          rawDate: p.date,
-          date: p.date ? new Date(p.date).toLocaleDateString('en-IN') : 'Today',
-          siteId: p.site?._id || p.siteId || (typeof p.site === 'string' ? p.site : null),
-          siteName: p.siteName || (p.site?.name) || 'Site',
-          siteCode: p.siteCode || (p.site?.code) || '',
-          amount: typeof p.amount === 'number' ? p.amount : parseFloat(p.amount) || 0,
-          paymentMode: p.paymentMode || 'Bank Transfer (NEFT)',
-          referenceNo: p.referenceNo || p.referenceNumber || '-',
-          status: p.status || 'Cleared',
-          notes: p.notes || '',
-          receiptUrl: p.receiptUrl || '',
-          flowType: p.flowType || (p.category === 'Client Payment' ? 'RECEIVED' : 'OUTGOING'),
-        };
+    list.forEach((p, idx) => {
+      const item = {
+        ...p,
+        _id: p._id || p.id,
+        id: p.referenceNo || p.paymentNumber || p._id || `PAY-${idx + 1}`,
+        displayId: p.paymentNumber || p.referenceNo || `PAY-${String(idx + 1).padStart(3, '0')}`,
+        rawDate: p.date,
+        date: p.date ? new Date(p.date).toLocaleDateString('en-IN') : 'Today',
+        siteId: p.site?._id || p.siteId || (typeof p.site === 'string' ? p.site : null),
+        siteName: p.siteName || (p.site?.name) || 'Site',
+        siteCode: p.siteCode || (p.site?.code) || '',
+        amount: typeof p.amount === 'number' ? p.amount : parseFloat(p.amount) || 0,
+        paymentMode: p.paymentMode || 'Bank Transfer (NEFT)',
+        referenceNo: p.referenceNo || p.referenceNumber || '-',
+        status: p.status || 'Cleared',
+        notes: p.notes || '',
+        receiptUrl: p.receiptUrl || '',
+        flowType: p.flowType || (p.category === 'Client Payment' ? 'RECEIVED' : 'OUTGOING'),
+      };
 
-        if (item.flowType === 'RECEIVED' || p.category === 'CLIENT_PAYMENT' || p.category === 'Client Payment') {
-          rec.push({
-            ...item,
-            clientName: p.partyName || p.clientName || 'Client',
-            invoiceRef: p.invoiceRef || p.referenceNo || p.referenceNumber || '-',
-          });
-        } else {
-          out.push({
-            ...item,
-            beneficiary: p.partyName || p.beneficiary || 'Vendor / Worker',
-            category: p.category || 'Materials',
-            billRef: p.invoiceRef || p.referenceNo || p.referenceNumber || '-',
-          });
-        }
-      });
+      if (item.flowType === 'RECEIVED') {
+        rec.push({
+          ...item,
+          clientName: p.partyName || p.clientName || 'Client',
+          invoiceRef: p.invoiceRef || p.referenceNo || p.referenceNumber || '-',
+        });
+      } else {
+        out.push({
+          ...item,
+          beneficiary: p.partyName || p.beneficiary || 'Vendor / Worker',
+          category: p.category || 'Materials',
+          billRef: p.invoiceRef || p.referenceNo || p.referenceNumber || '-',
+        });
+      }
+    });
 
-      setReceivedPayments(rec);
-      setOutgoingPayments(out);
-    } catch (err) {
-      console.warn('Could not fetch payments from backend:', err.message);
-      setReceivedPayments([]);
-      setOutgoingPayments([]);
-    }
+    setReceivedPayments(rec);
+    setOutgoingPayments(out);
   };
 
   // Form state for Record Received Payment Modal
@@ -195,15 +207,8 @@ export default function Payments() {
   }, [activeTab, searchQuery, selectedSiteFilter, selectedModeFilter, selectedStatusFilter, selectedDateFilter, customStartDate, customEndDate]);
 
   // KPI Calculations
-  const totalReceived = useMemo(() => {
-    return receivedPayments.reduce((sum, item) => sum + (item.amount || 0), 0);
-  }, [receivedPayments]);
-
-  const totalOutgoing = useMemo(() => {
-    return outgoingPayments.reduce((sum, item) => sum + (item.amount || 0), 0);
-  }, [outgoingPayments]);
-
-  const netBalance = totalReceived - totalOutgoing;
+  const { totalReceived = 0, totalOutgoing = 0, netBalance = 0,
+    pendingReceived = 0, pendingOutgoing = 0 } = summary;
 
   // Dynamic Payment Progress: (Total Received Amount ÷ Total Contract Budget) × 100
   // Excludes outgoing payments completely; starts at 0% when no payment is received
@@ -285,9 +290,7 @@ export default function Payments() {
 
       const matchesSite =
         selectedSiteFilter === 'All Sites' ||
-        p.siteName === selectedSiteFilter ||
-        p.siteId === selectedSiteFilter ||
-        String(p.siteName || '').includes(selectedSiteFilter);
+        p.siteId === selectedSiteFilter;
 
       const matchesMode =
         selectedModeFilter === 'All Modes' ||
@@ -315,9 +318,7 @@ export default function Payments() {
 
       const matchesSite =
         selectedSiteFilter === 'All Sites' ||
-        p.siteName === selectedSiteFilter ||
-        p.siteId === selectedSiteFilter ||
-        String(p.siteName || '').includes(selectedSiteFilter);
+        p.siteId === selectedSiteFilter;
 
       const matchesMode =
         selectedModeFilter === 'All Modes' ||
@@ -331,8 +332,46 @@ export default function Payments() {
     });
   }, [outgoingPayments, searchQuery, selectedSiteFilter, selectedModeFilter, selectedStatusFilter, selectedDateFilter, customStartDate, customEndDate]);
 
+  const totalPendingAmount = useMemo(() => {
+    return pendingExpenses.reduce((sum, exp) => {
+      const amt = exp.pendingAmount !== undefined && exp.pendingAmount > 0 ? exp.pendingAmount : exp.amount || 0;
+      return sum + amt;
+    }, 0);
+  }, [pendingExpenses]);
+
+  const filteredPending = useMemo(() => {
+    return pendingExpenses.filter((exp) => {
+      const q = searchQuery.toLowerCase();
+      const sName = exp.siteName || exp.site?.name || '';
+      const sCode = exp.siteCode || exp.site?.code || '';
+      const payee = exp.supplierName || exp.labourName || exp.vendor || '';
+      const matchesSearch =
+        String(payee).toLowerCase().includes(q) ||
+        String(exp.description || '').toLowerCase().includes(q) ||
+        String(exp.category || '').toLowerCase().includes(q) ||
+        String(sName).toLowerCase().includes(q) ||
+        String(sCode).toLowerCase().includes(q);
+
+      const matchesSite =
+        selectedSiteFilter === 'All Sites' ||
+        (exp.site?._id || exp.site) === selectedSiteFilter;
+
+      const matchesStatus =
+        selectedStatusFilter === 'All Status' ||
+        String(exp.paymentStatus || 'Pending').toLowerCase() === selectedStatusFilter.toLowerCase() ||
+        (selectedStatusFilter === 'Pending' && (exp.paymentStatus === 'Pending' || exp.paymentStatus === 'Partial'));
+
+      return matchesSearch && matchesSite && matchesStatus && matchesDateFilter({ rawDate: exp.date });
+    });
+  }, [pendingExpenses, searchQuery, selectedSiteFilter, selectedStatusFilter, selectedDateFilter, customStartDate, customEndDate]);
+
   // Active paginated slice
-  const activeList = activeTab === 'received' ? filteredReceived : filteredOutgoing;
+  const activeList =
+    activeTab === 'received'
+      ? filteredReceived
+      : activeTab === 'outgoing'
+      ? filteredOutgoing
+      : filteredPending;
   const totalPages = Math.ceil(activeList.length / itemsPerPage) || 1;
   const paginatedList = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -384,7 +423,7 @@ export default function Payments() {
     if (!receivedForm.amount || parseFloat(receivedForm.amount) <= 0) return;
 
     const matched = sitesList.find(
-      (s) => `${s.name} (${s.code})` === receivedForm.siteName || s.name === receivedForm.siteName || s._id === receivedForm.siteName
+      (s) => s._id === receivedForm.siteName || `${s.name} (${s.code})` === receivedForm.siteName
     );
     const siteId = matched ? matched._id : null;
     if (!siteId) {
@@ -442,7 +481,7 @@ export default function Payments() {
       Labour: 'Labour Wages',
       Rental: 'Machinery Rental',
       'Vehicle Rent': 'Vehicle Rental',
-      'Additional Work': 'Other',
+      'Additional Work': 'Additional Work',
       Other: 'Other',
     };
     const sName = exp.siteName || exp.site?.name || '';
@@ -460,6 +499,11 @@ export default function Payments() {
       billRef,
       notes: `Clearing pending expense: ${exp.description}`,
     }));
+  };
+
+  const handleSettlePendingExpense = (exp) => {
+    handleSelectPendingExpense(exp._id || exp.id);
+    setIsOutgoingModalOpen(true);
   };
 
   const handleSaveOutgoing = async (e) => {
@@ -482,13 +526,12 @@ export default function Payments() {
       }
     }
 
-    const matched = sitesList.find(
-      (s) =>
-        `${s.name} (${s.code})` === outgoingForm.siteName ||
-        s.name === outgoingForm.siteName ||
-        s.name === outgoingForm.siteName.split(' (')[0] ||
-        s._id === outgoingForm.siteName
-    );
+    const linkedExpense = pendingExpenses.find((expense) => expense._id === selectedPendingExpenseId);
+    const linkedSiteId = linkedExpense?.site?._id || linkedExpense?.site;
+    const matched = sitesList.find((site) => linkedExpense
+      ? site._id === linkedSiteId
+      : site._id === outgoingForm.siteName || `${site.name} (${site.code})` === outgoingForm.siteName);
+
     const siteId = matched ? matched._id : null;
     if (!siteId) {
       alert('Please select a valid construction site.');
@@ -705,6 +748,7 @@ export default function Payments() {
         </div>
       </div>
 
+      {loadError && <p role="alert" className="text-sm text-rose-700">{loadError}</p>}
       {/* 2. Top Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Total Inflow (Client Received) */}
@@ -721,8 +765,8 @@ export default function Payments() {
             ₹ {totalReceived.toLocaleString('en-IN')}
           </div>
           <div className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1.5">
-            <span className="font-bold text-emerald-800">{receivedPayments.length} receipts</span>
-            <span>across construction sites</span>
+            <span className="font-bold text-emerald-800">{receivedPayments.filter((payment) => ['Cleared', 'Paid'].includes(payment.status)).length} cleared receipts</span>
+            <span>· Pending ₹{pendingReceived.toLocaleString('en-IN')}</span>
           </div>
 
           {/* Dynamic Payment Progress Bar (Client Received vs Total Contract Budget) */}
@@ -760,8 +804,8 @@ export default function Payments() {
             ₹ {totalOutgoing.toLocaleString('en-IN')}
           </div>
           <div className="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1.5">
-            <span className="font-bold text-slate-800">{outgoingPayments.length} payouts</span>
-            <span>materials, labour & rentals</span>
+            <span className="font-bold text-slate-800">{outgoingPayments.filter((payment) => ['Cleared', 'Paid'].includes(payment.status)).length} cleared payouts</span>
+            <span>· Pending ₹{pendingOutgoing.toLocaleString('en-IN')}</span>
           </div>
         </div>
 
@@ -787,12 +831,15 @@ export default function Payments() {
         </div>
       </div>
 
-      {/* 3. Primary Two-Tab Switcher: Received vs Outgoing */}
+      {/* 3. Primary Three-Tab Switcher: Received vs Outgoing vs Pending */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Tab 1: Received Payments */}
           <button
-            onClick={() => setActiveTab('received')}
+            onClick={() => {
+              setActiveTab('received');
+              setCurrentPage(1);
+            }}
             className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
               activeTab === 'received'
                 ? 'bg-[#008744] text-white shadow-md shadow-emerald-800/25'
@@ -812,7 +859,10 @@ export default function Payments() {
 
           {/* Tab 2: Outgoing Payments */}
           <button
-            onClick={() => setActiveTab('outgoing')}
+            onClick={() => {
+              setActiveTab('outgoing');
+              setCurrentPage(1);
+            }}
             className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
               activeTab === 'outgoing'
                 ? 'bg-[#0072ff] text-white shadow-md shadow-blue-500/25'
@@ -829,13 +879,42 @@ export default function Payments() {
               {outgoingPayments.length}
             </span>
           </button>
+
+          {/* Tab 3: Pending Payments */}
+          <button
+            onClick={() => {
+              setActiveTab('pending');
+              setCurrentPage(1);
+            }}
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+              activeTab === 'pending'
+                ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25'
+                : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-amber-50 border border-slate-200'
+            }`}
+          >
+            <Clock size={16} />
+            <span>3. Pending Payments</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                activeTab === 'pending'
+                  ? 'bg-amber-900 text-white'
+                  : pendingExpenses.length > 0
+                  ? 'bg-rose-100 text-rose-700'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {pendingExpenses.length}
+            </span>
+          </button>
         </div>
 
         {/* Active Tab Explanation Pill */}
         <div className="text-[11px] font-semibold text-slate-500">
           {activeTab === 'received'
             ? 'Payments received from clients against their sites or milestone invoices'
-            : 'Payments made to material suppliers, contractors and rental providers'}
+            : activeTab === 'outgoing'
+            ? 'Payments made to material suppliers, contractors and rental providers'
+            : `Unpaid & partial site expenses awaiting settlement (Total Pending: ₹${totalPendingAmount.toLocaleString('en-IN')})`}
         </div>
       </div>
 
@@ -852,7 +931,9 @@ export default function Payments() {
             placeholder={
               activeTab === 'received'
                 ? 'Search client name, site, receipt ID, reference...'
-                : 'Search supplier/vendor, category, bill ref, payment ID...'
+                : activeTab === 'outgoing'
+                ? 'Search supplier/vendor, category, bill ref, payment ID...'
+                : 'Search site, payee/supplier, category, or expense description...'
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -871,8 +952,8 @@ export default function Payments() {
             >
               <option value="All Sites">All Sites</option>
               {sitesList.map((s) => (
-                <option key={s._id || s.id} value={s.name}>
-                  {s.name}
+                <option key={s._id || s.id} value={s._id || s.id}>
+                  {s.name} ({s.code})
                 </option>
               ))}
             </select>
@@ -1052,7 +1133,7 @@ export default function Payments() {
               </tbody>
             </table>
           </div>
-        ) : (
+        ) : activeTab === 'outgoing' ? (
           /* Table: Outgoing Payments */
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
@@ -1159,6 +1240,131 @@ export default function Payments() {
                       </td>
                     </tr>
                   ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          /* Table: Pending Payments (Unpaid & Partial Site Expenses) */
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b-2 border-slate-200 text-xs font-bold text-slate-800 uppercase tracking-wider bg-amber-50/70">
+                  <th className="py-3.5 px-4 w-12 text-center">#</th>
+                  <th className="py-3.5 px-4">Date</th>
+                  <th className="py-3.5 px-4">Construction Site</th>
+                  <th className="py-3.5 px-4">For Whom (Payee / Vendor)</th>
+                  <th className="py-3.5 px-4">Expense & Category</th>
+                  <th className="py-3.5 px-4 text-right">Total Bill</th>
+                  <th className="py-3.5 px-4 text-right">Paid</th>
+                  <th className="py-3.5 px-4 text-right">Pending Balance</th>
+                  <th className="py-3.5 px-4 text-center">Status</th>
+                  <th className="py-3.5 px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan="10" className="py-12 text-center text-slate-400">
+                      <Clock size={24} className="mx-auto mb-2 text-slate-300 animate-spin" />
+                      <div className="font-semibold text-slate-600">Loading pending expenses...</div>
+                    </td>
+                  </tr>
+                ) : paginatedList.length === 0 ? (
+                  <tr>
+                    <td colSpan="10" className="py-12 text-center text-slate-400">
+                      <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-400" />
+                      <div className="font-bold text-slate-700">All caught up! No pending payments.</div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        Expenses marked as Pending or Partial in Site Expenses will appear here automatically.
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedList.map((exp, idx) => {
+                    const sName = exp.siteName || exp.site?.name || 'Site';
+                    const sCode = exp.siteCode || exp.site?.code || '';
+                    const payee =
+                      (exp.supplierName && exp.supplierName !== '-' ? exp.supplierName : '') ||
+                      exp.labourName ||
+                      exp.vendor ||
+                      exp.description ||
+                      'Vendor / Worker';
+                    const totalAmt = Number(exp.amount || 0);
+                    const paidAmt = Number(exp.paidAmount || 0);
+                    const pendingAmt =
+                      exp.pendingAmount !== undefined && exp.pendingAmount > 0
+                        ? Number(exp.pendingAmount)
+                        : Math.max(0, totalAmt - paidAmt);
+                    const isPartial = exp.paymentStatus === 'Partial';
+
+                    return (
+                      <tr key={exp._id || exp.id || idx} className="hover:bg-amber-50/30 transition-colors">
+                        <td className="py-3.5 px-4 text-center text-slate-500 font-bold">
+                          {(currentPage - 1) * itemsPerPage + idx + 1}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">
+                          {exp.date ? new Date(exp.date).toLocaleDateString('en-IN') : 'Recent'}
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <div className="font-bold text-slate-900">{sName}</div>
+                          {sCode && (
+                            <span className="text-[10px] font-mono text-slate-500 font-semibold">
+                              {sCode}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-extrabold text-slate-900">{payee}</div>
+                          {exp.invoiceBillNo && (
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              Bill: {exp.invoiceBillNo}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 mb-1">
+                            {exp.category || 'Expense'}
+                          </span>
+                          <div className="text-xs text-slate-700 font-medium max-w-xs truncate">
+                            {exp.description || '-'}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-bold text-slate-700 whitespace-nowrap">
+                          ₹ {totalAmt.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-semibold text-emerald-700 whitespace-nowrap">
+                          ₹ {paidAmt.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <span className="font-black text-sm text-rose-600">
+                            ₹ {pendingAmt.toLocaleString('en-IN')}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold border ${
+                              isPartial
+                                ? 'bg-orange-50 text-orange-700 border-orange-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}
+                          >
+                            <Clock size={11} />
+                            <span>{exp.paymentStatus || 'Pending'}</span>
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                          <button
+                            onClick={() => handleSettlePendingExpense(exp)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0072ff] hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
+                          >
+                            <Send size={12} />
+                            <span>Pay Now</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1318,12 +1524,11 @@ export default function Payments() {
                         onChange={(e) => setReceivedForm({ ...receivedForm, paymentMode: e.target.value })}
                         className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 shadow-2xs cursor-pointer"
                       >
-                        <option value="Bank Transfer (NEFT)">Bank Transfer (NEFT)</option>
-                        <option value="Bank Transfer (RTGS)">Bank Transfer (RTGS)</option>
-                        <option value="UPI (GPay)">UPI (GPay)</option>
-                        <option value="UPI (PhonePe)">UPI (PhonePe)</option>
-                        <option value="Cheque">Cheque</option>
-                        <option value="Cash">Cash</option>
+                        {paymentModeOptions.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>
@@ -1501,7 +1706,7 @@ export default function Payments() {
                   {selectedPendingExpenseId && (
                     <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 pt-0.5">
                       <CheckCircle2 size={13} className="text-emerald-600" />
-                      <span>Linked to pending expense. Submitting will update the expense as Paid!</span>
+                      <span>This payment will reduce the outstanding balance.</span>
                     </p>
                   )}
                 </div>
@@ -1531,12 +1736,11 @@ export default function Payments() {
                         onChange={(e) => setOutgoingForm({ ...outgoingForm, category: e.target.value })}
                         className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
                       >
-                        <option value="Materials">Materials Purchase</option>
-                        <option value="Labour Wages">Labour Wages</option>
-                        <option value="Vehicle Rental">Vehicle Rental</option>
-                        <option value="Machinery Rental">Machinery Rental</option>
-                        <option value="Contractor">Sub-Contractor</option>
-                        <option value="Other">Other Expenses</option>
+                        {outgoingCategoryOptions.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>
@@ -1549,6 +1753,7 @@ export default function Payments() {
                     <div className="relative">
                       <select
                         value={outgoingForm.siteName}
+                        disabled={Boolean(selectedPendingExpenseId)}
                         onChange={(e) => setOutgoingForm({ ...outgoingForm, siteName: e.target.value })}
                         className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
                       >
@@ -1593,12 +1798,11 @@ export default function Payments() {
                         onChange={(e) => setOutgoingForm({ ...outgoingForm, paymentMode: e.target.value })}
                         className="w-full appearance-none pl-3.5 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 shadow-2xs cursor-pointer"
                       >
-                        <option value="Bank Transfer (NEFT)">Bank Transfer (NEFT)</option>
-                        <option value="Bank Transfer (RTGS)">Bank Transfer (RTGS)</option>
-                        <option value="UPI (GPay)">UPI (GPay)</option>
-                        <option value="UPI (PhonePe)">UPI (PhonePe)</option>
-                        <option value="Cash">Cash</option>
-                        <option value="Cheque">Cheque</option>
+                        {paymentModeOptions.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>

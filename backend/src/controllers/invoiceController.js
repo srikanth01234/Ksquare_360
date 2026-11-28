@@ -7,6 +7,8 @@ const Site = require('../models/Site');
 exports.getInvoices = async (req, res, next) => {
   try {
     const { siteId, status, search, limit = 50 } = req.query;
+    const page = Math.max(0, parseInt(req.query.page, 10) || 0);
+    const pageSize = page ? Math.min(100, Math.max(1, parseInt(limit, 10) || 50)) : parseInt(limit);
     const filter = {};
 
     if (siteId && siteId !== 'All Sites') {
@@ -25,14 +27,18 @@ exports.getInvoices = async (req, res, next) => {
       ];
     }
 
-    const invoices = await Invoice.find(filter)
+    const query = Invoice.find(filter)
       .populate('site', 'name code location client')
-      .sort({ issueDate: -1, createdAt: -1 })
-      .limit(parseInt(limit));
+      .sort({ issueDate: -1, createdAt: -1, _id: -1 })
+      .limit(pageSize);
+    if (page) query.skip((page - 1) * pageSize);
+    const invoices = await query;
+    const totalCount = page ? await Invoice.countDocuments(filter) : undefined;
 
     res.status(200).json({
       success: true,
       count: invoices.length,
+      totalCount,
       data: invoices,
     });
   } catch (error) {

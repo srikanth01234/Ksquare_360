@@ -7,6 +7,13 @@ const dailyUpdateSchema = new mongoose.Schema(
       ref: 'Site',
       required: true,
     },
+    expense: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Expense',
+    },
+    progress: { type: Number, min: 0, max: 100 },
+    materialsUsed: { type: String, trim: true },
+    status: { type: String, enum: ['In Progress', 'Completed'] },
     siteName: {
       type: String,
       default: '',

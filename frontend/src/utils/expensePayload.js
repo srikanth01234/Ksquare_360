@@ -27,6 +27,7 @@ export function buildExpensePayload(newExp, siteContext = null) {
       : newExp.paymentMethod || newExp.paymentMode || 'Cash';
 
   return {
+    submissionKey: newExp.submissionKey,
     siteId,
     site: siteId,
     siteName,

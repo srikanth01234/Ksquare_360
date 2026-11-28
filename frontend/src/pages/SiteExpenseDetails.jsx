@@ -34,7 +34,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
-import { expenseApi, paymentApi } from '../services/api';
+import { getAllPages, expenseApi, paymentApi } from '../services/api';
 import { buildExpensePayload } from '../utils/expensePayload';
 
 export default function SiteExpenseDetails({
@@ -45,6 +45,9 @@ export default function SiteExpenseDetails({
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('ALL'); // 'ALL' | 'Paid' | 'Pending'
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [expensePage, setExpensePage] = useState(1);
+  const [summary, setSummary] = useState({});
+  const [loadError, setLoadError] = useState('');
   const [siteExpenses, setSiteExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewingExpense, setViewingExpense] = useState(null);
@@ -87,18 +90,14 @@ export default function SiteExpenseDetails({
   const loadSiteExpenses = async () => {
     setLoading(true);
     try {
-      const res = await expenseApi.getAll();
-      const all = res.data || res || [];
-      const sId = currentSite._id || currentSite.id;
-      const sName = currentSite.name;
-      const sCode = currentSite.code;
-
-      const filtered = all.filter((e) => {
-        const matchesId = sId && (e.siteId === sId || e.site?._id === sId || e.site === sId);
-        const matchesName = sName && (e.siteName === sName || e.site?.name === sName);
-        const matchesCode = sCode && (e.siteCode === sCode || e.site?.code === sCode);
-        return matchesId || matchesName || matchesCode;
-      });
+      const siteId = currentSite._id || currentSite.id;
+      if (!siteId) throw new Error('The construction site could not be identified.');
+      const [filtered, totals] = await Promise.all([
+        getAllPages(expenseApi.getAll, { siteId }),
+        expenseApi.getSummary(siteId),
+      ]);
+      setSummary(totals.data);
+      setLoadError('');
 
       const formatted = filtered.map((e, idx) => {
         const isAddWork = Boolean(
@@ -139,21 +138,16 @@ export default function SiteExpenseDetails({
       setSiteExpenses(formatted);
     } catch (err) {
       console.warn('Could not load site expenses from backend:', err.message);
-      setSiteExpenses([]);
+      setLoadError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleAddExpense = async (newExp) => {
-    try {
-      const payload = buildExpensePayload(newExp, currentSite);
-      await expenseApi.create(payload);
-      await loadSiteExpenses();
-    } catch (err) {
-      console.warn('Could not save expense in backend:', err.message);
-      alert(`Could not save expense: ${err.message}`);
-    }
+    const payload = buildExpensePayload({ ...newExp, siteId: currentSite._id || currentSite.id }, currentSite);
+    await expenseApi.create(payload);
+    await loadSiteExpenses();
   };
 
   const handleDeleteExpense = async (id) => {
@@ -162,7 +156,7 @@ export default function SiteExpenseDetails({
       await expenseApi.delete(id);
       await loadSiteExpenses();
     } catch (err) {
-      console.warn('Could not delete expense:', err.message);
+      setLoadError(err.message);
     }
   };
 
@@ -244,15 +238,15 @@ export default function SiteExpenseDetails({
         description: editForm.description,
         supplierName: editForm.supplierName,
         amount: parsedAmt,
-        paymentStatus: editForm.paymentStatus,
+        ...(editForm.paymentStatus !== (editingExpense.paymentStatus || editingExpense.payment)
+          ? { paymentStatus: editForm.paymentStatus } : {}),
         paymentMode: editForm.paymentMode,
         date: editForm.date,
       });
       await loadSiteExpenses();
       setEditingExpense(null);
     } catch (err) {
-      console.warn('Could not update expense in backend:', err.message);
-      setEditingExpense(null);
+      setLoadError(err.message);
     }
   };
 
@@ -288,20 +282,10 @@ export default function SiteExpenseDetails({
   };
 
   // Calculations from live site expenses (accurately counting Partial payments)
-  const totalExpenses = siteExpenses.reduce((sum, e) => sum + (e.amountNum || 0), 0);
-  const paidAmount = siteExpenses.reduce((sum, e) => {
-    if (e.payment === 'Paid') return sum + (e.paidAmount > 0 ? e.paidAmount : e.amountNum || 0);
-    if (e.payment === 'Partial') return sum + (e.paidAmount || 0);
-    return sum;
-  }, 0);
-  const pendingAmount = Math.max(0, totalExpenses - paidAmount);
+  const { totalExpenses = 0, paidAmount = 0, pendingAmount = 0, additionalWorkExpenses: additionalWorkAmount = 0 } = summary;
   const paidPercentage = totalExpenses > 0 ? Math.round((paidAmount / totalExpenses) * 100) : 0;
   const pendingPercentage = totalExpenses > 0 ? 100 - paidPercentage : 0;
-  const additionalWorkAmount = siteExpenses
-    .filter((e) => e.isAdditionalWork)
-    .reduce((sum, e) => sum + (e.amountNum || 0), 0);
 
-  // Match Tab Function
   const matchesTab = (exp, tabId) => {
     if (tabId === 'All Expenses') return true;
     if (tabId === 'Additional Work') return Boolean(exp.isAdditionalWork);
@@ -372,8 +356,19 @@ export default function SiteExpenseDetails({
     }
   };
 
+  const pageSize = 20;
+  const lastPage = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
+  const page = Math.min(expensePage, lastPage);
+  const firstRow = (page - 1) * pageSize;
+  const pageEntries = filteredEntries.slice(firstRow, firstRow + pageSize);
+
+  useEffect(() => {
+    setExpensePage(1);
+  }, [activeTab, searchQuery, paymentFilter]);
+
   return (
     <div className="p-5 md:p-8 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+      {loadError && <p role="alert" className="text-sm text-rose-700">{loadError}</p>}
       {/* 1. Breadcrumb */}
       <nav className="flex items-center gap-2 text-xs font-medium text-slate-500">
         <button
@@ -636,7 +631,8 @@ export default function SiteExpenseDetails({
                   </td>
                 </tr>
               ) : (
-                filteredEntries.map((row, idx) => {
+                pageEntries.map((row, index) => {
+                  const idx = firstRow + index;
                   const badge = getCategoryBadge(row);
                   return (
                     <tr key={row._id || row.id} className="hover:bg-slate-50/70 transition-colors">
@@ -740,6 +736,14 @@ export default function SiteExpenseDetails({
           </table>
         </div>
       </div>
+
+      {lastPage > 1 && (
+        <nav aria-label="Site expense pages" className="flex items-center justify-end gap-3 text-xs font-semibold">
+          <button type="button" disabled={page === 1} onClick={() => setExpensePage(page - 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Previous</button>
+          <span>Page {page} of {lastPage}</span>
+          <button type="button" disabled={page === lastPage} onClick={() => setExpensePage(page + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Next</button>
+        </nav>
+      )}
 
       {/* Helpful Tip Notice */}
       <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-xs text-slate-600">

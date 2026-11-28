@@ -1,3 +1,6 @@
+const DailyUpdate = require('../models/DailyUpdate');
+const transactionalWrite = require('../utils/transactionalWrite');
+const { isAdditionalWork, money, getClearedExpensePayments, sumPayments, recalculateExpensePaymentState } = require('../utils/expenseSync');
 const Expense = require('../models/Expense');
 const Site = require('../models/Site');
 const Payment = require('../models/Payment');
@@ -8,6 +11,8 @@ const Payment = require('../models/Payment');
 exports.getExpenses = async (req, res, next) => {
   try {
     const { siteId, category, expenseType, isAdditionalWork, paymentStatus, search, startDate, endDate, limit = 100 } = req.query;
+    const page = Math.max(0, parseInt(req.query.page, 10) || 0);
+    const pageSize = page ? Math.min(100, Math.max(1, parseInt(limit, 10) || 50)) : parseInt(limit);
     const filter = {};
 
     if (siteId && siteId !== 'All Sites') {
@@ -49,14 +54,18 @@ exports.getExpenses = async (req, res, next) => {
       ];
     }
 
-    const expenses = await Expense.find(filter)
+    const query = Expense.find(filter)
       .populate('site', 'name code location client')
-      .sort({ date: -1, createdAt: -1 })
-      .limit(parseInt(limit));
+      .sort({ date: -1, createdAt: -1, _id: -1 })
+      .limit(pageSize);
+    if (page) query.skip((page - 1) * pageSize);
+    const expenses = await query;
+    const totalCount = page ? await Expense.countDocuments(filter) : undefined;
 
     res.status(200).json({
       success: true,
       count: expenses.length,
+      totalCount,
       data: expenses,
     });
   } catch (error) {
@@ -101,22 +110,23 @@ exports.getExpenseSummary = async (req, res, next) => {
       }
 
       const cat = exp.category;
-      if (cat === 'Materials') materialExpenses += amt;
+      if (isAdditionalWork(exp)) additionalWorkExpenses += amt;
+      else if (cat === 'Materials') materialExpenses += amt;
       else if (cat === 'Labour') labourExpenses += amt;
       else if (cat === 'Rental' || cat === 'Vehicle Rent' || cat === 'Rent') rentalExpenses += amt;
-      else if (cat === 'Additional Work') additionalWorkExpenses += amt;
     });
 
     res.status(200).json({
       success: true,
       data: {
-        totalExpenses: Math.round(totalExpenses),
-        paidAmount: Math.round(paidAmount),
-        pendingAmount: Math.round(pendingAmount),
-        additionalWorkExpenses: Math.round(additionalWorkExpenses),
-        materialExpenses: Math.round(materialExpenses),
-        labourExpenses: Math.round(labourExpenses),
-        rentalExpenses: Math.round(rentalExpenses),
+        totalExpenses: money(totalExpenses),
+        paidAmount: money(paidAmount),
+        pendingAmount: money(pendingAmount),
+        additionalWorkExpenses: money(additionalWorkExpenses),
+        materialExpenses: money(materialExpenses),
+        labourExpenses: money(labourExpenses),
+        rentalExpenses: money(rentalExpenses),
+        normalContractExpenses: money(totalExpenses - additionalWorkExpenses),
         totalCount: expenses.length,
       },
     });
@@ -147,7 +157,7 @@ exports.getExpenseById = async (req, res, next) => {
 // @desc    Create new expense (supports multi-item breakdown and receipt upload)
 // @route   POST /api/expenses
 // @access  Public
-exports.createExpense = async (req, res, next) => {
+exports.createExpense = transactionalWrite(async (req, res, next) => {
   try {
     let {
       siteId,
@@ -157,7 +167,6 @@ exports.createExpense = async (req, res, next) => {
       amount,
       paymentStatus = 'Paid',
       paidAmount,
-      pendingAmount,
       paymentMode,
       referenceNo,
       invoiceBillNo,
@@ -179,13 +188,22 @@ exports.createExpense = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Site not found' });
     }
 
+    const submissionKey = typeof req.body.submissionKey === 'string' ? req.body.submissionKey.trim() : '';
+    if (submissionKey) {
+      const existing = await Expense.findOne({ site: site._id, submissionKey });
+      if (existing) return res.status(200).json({ success: true, data: existing });
+    }
     const billingNum = req.body.billingAmount !== undefined && req.body.billingAmount !== null && req.body.billingAmount !== ''
       ? parseFloat(req.body.billingAmount)
       : null;
     const calcNum = req.body.calculatedAmount !== undefined && req.body.calculatedAmount !== null && req.body.calculatedAmount !== ''
       ? parseFloat(req.body.calculatedAmount)
       : (parseFloat(amount) || 0);
-    const totalAmt = billingNum !== null && billingNum > 0 ? billingNum : (parseFloat(amount) || 0);
+    const isAddl = isAdditionalWork(req.body);
+    const totalAmt = money(billingNum > 0 ? billingNum : Number(amount));
+    if (totalAmt <= 0 || !Number.isFinite(totalAmt) || !['Paid', 'Pending', 'Partial'].includes(paymentStatus)) {
+      return res.status(400).json({ success: false, message: 'Provide a positive expense amount and a valid payment status.' });
+    }
 
     let finalPaid = 0;
     let finalPending = 0;
@@ -199,31 +217,54 @@ exports.createExpense = async (req, res, next) => {
       finalPending = totalAmt;
       finalPaymentMode = '';
     } else if (paymentStatus === 'Partial') {
-      finalPaid = parseFloat(paidAmount) || 0;
+      finalPaid = money(paidAmount);
       if (finalPaid <= 0 || finalPaid >= totalAmt) {
         return res.status(400).json({
           success: false,
           message: `Partial paid amount must be greater than 0 and less than total billing amount (₹${totalAmt}).`,
         });
       }
-      finalPending = Math.max(0, totalAmt - finalPaid);
-    } else {
-      finalPaid = parseFloat(paidAmount) || 0;
-      finalPending = parseFloat(pendingAmount) || Math.max(0, totalAmt - finalPaid);
+      finalPending = money(totalAmt - finalPaid);
     }
 
-    // Parse multi-item breakdown if passed as JSON string
+    // Parse & normalize multi-item breakdown if passed
     let parsedItems = [];
     if (items) {
+      let rawItems = [];
       if (typeof items === 'string') {
         try {
-          parsedItems = JSON.parse(items);
+          rawItems = JSON.parse(items);
         } catch (e) {
-          parsedItems = [];
+          rawItems = [];
         }
       } else if (Array.isArray(items)) {
-        parsedItems = items;
+        rawItems = items;
       }
+
+      parsedItems = rawItems
+        .filter((it) => it && typeof it === 'object')
+        .map((it) => {
+          const qty = Number(it.quantity ?? it.weight ?? it.length ?? 1) || 1;
+          const amt = Number(it.amount ?? 0) || 0;
+          const rt = Number(it.rate ?? (qty > 0 ? amt / qty : 0)) || 0;
+          return {
+            material: it.material && /^[0-9a-fA-F]{24}$/.test(String(it.material)) ? it.material : null,
+            materialName: String(
+              it.materialName ||
+                it.material ||
+                it.materialType ||
+                it.steelType ||
+                it.ringType ||
+                it.sandType ||
+                it.name ||
+                'Material'
+            ).trim(),
+            quantity: qty,
+            unit: String(it.unit || (it.weight ? 'Kg' : 'Units')).trim(),
+            rate: rt,
+            amount: amt,
+          };
+        });
     }
 
     // Receipt URL if file uploaded
@@ -234,12 +275,13 @@ exports.createExpense = async (req, res, next) => {
       receiptUrl = req.body.receiptUrl;
     }
 
-    const isAddl = category === 'Additional Work' || req.body.isAdditionalWork === true || req.body.expenseType === 'ADDITIONAL_WORK';
     const finalExpenseType = isAddl ? 'ADDITIONAL_WORK' : 'NORMAL';
-    const finalBillable = Boolean(req.body.billableToClient ?? req.body.additionalWorkClientApproved ?? isAddl);
+    const billingApproval = req.body.billableToClient ?? req.body.additionalWorkClientApproved ?? isAddl;
+    const finalBillable = billingApproval === true || billingApproval === 'true';
 
     const newExpense = await Expense.create({
       site: site._id,
+      submissionKey: submissionKey || undefined,
       siteName: site.name,
       siteCode: site.code,
       category,
@@ -292,6 +334,20 @@ exports.createExpense = async (req, res, next) => {
       });
     }
 
+    if (req.body.logDailyActivity === true) {
+      await DailyUpdate.create({
+        site: site._id,
+        siteName: site.name,
+        siteCode: site.code,
+        expense: newExpense._id,
+        title: `${category} Expense: ${description}`,
+        description: `${description} (₹${totalAmt.toLocaleString('en-IN')})`,
+        workPhase: category,
+        workersCount: category === 'Labour' ? Number(req.body.quantity) || 0 : 0,
+        date: newExpense.date,
+      });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Expense recorded successfully',
@@ -300,12 +356,12 @@ exports.createExpense = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
+});
 
 // @desc    Update expense (e.g. mark pending bill as paid)
 // @route   PUT /api/expenses/:id
 // @access  Public
-exports.updateExpense = async (req, res, next) => {
+exports.updateExpense = transactionalWrite(async (req, res, next) => {
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) {
@@ -313,59 +369,53 @@ exports.updateExpense = async (req, res, next) => {
     }
 
     const {
-      category,
       description,
       supplierName,
       amount,
       paymentStatus,
       paidAmount,
-      pendingAmount,
       paymentMode,
       referenceNo,
       notes,
+      date,
     } = req.body;
 
-    const prevPaid = Number(expense.paidAmount) || 0;
+    const clearedTotal = sumPayments(await getClearedExpensePayments(expense._id));
+    const nextAmount = amount === undefined ? expense.amount : money(amount);
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Provide a positive expense amount.' });
+    }
 
-    if (category) expense.category = category;
+    const currentPaid = Math.max(clearedTotal, money(expense.paidAmount));
+    const statusChanged = paymentStatus && paymentStatus !== expense.paymentStatus;
+    const desiredPaid = paymentStatus === 'Paid'
+      ? nextAmount
+      : paymentStatus === 'Pending' ? 0 : paidAmount === undefined ? currentPaid : money(paidAmount);
+    if (nextAmount < currentPaid || (statusChanged && desiredPaid < currentPaid) ||
+        (paidAmount !== undefined && desiredPaid < currentPaid)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Adjust the linked payment in Payments before reducing the recorded paid amount or expense total.',
+      });
+    }
+    if (!Number.isFinite(desiredPaid) || desiredPaid > nextAmount || (paymentStatus === 'Partial' && (desiredPaid <= 0 || desiredPaid >= nextAmount))) {
+      return res.status(400).json({ success: false, message: 'Enter a valid paid amount for this expense.' });
+    }
+
     if (description) expense.description = description;
     if (supplierName !== undefined) expense.supplierName = supplierName;
-    if (amount !== undefined) expense.amount = parseFloat(amount);
+    expense.amount = nextAmount;
     if (paymentMode !== undefined) expense.paymentMode = paymentMode;
     if (referenceNo) expense.referenceNo = referenceNo;
     if (notes !== undefined) expense.notes = notes;
-
-    if (paymentStatus) {
-      expense.paymentStatus = paymentStatus;
-      if (paymentStatus === 'Paid') {
-        expense.paidAmount = expense.amount;
-        expense.pendingAmount = 0;
-      } else if (paymentStatus === 'Pending') {
-        expense.paidAmount = 0;
-        expense.pendingAmount = expense.amount;
-        expense.paymentMode = '';
-      } else {
-        if (paidAmount !== undefined) expense.paidAmount = parseFloat(paidAmount);
-        if (pendingAmount !== undefined) {
-          expense.pendingAmount = parseFloat(pendingAmount);
-        } else {
-          expense.pendingAmount = Math.max(0, expense.amount - (expense.paidAmount || 0));
-        }
-      }
-    }
+    if (date) expense.date = new Date(date);
 
     if (req.file) {
       expense.receiptUrl = `/uploads/receipts/${req.file.filename}`;
     }
 
-    await expense.save();
-
-    // Synchronize Payments ledger when expense payment status/amount changes via Edit
-    const newPaid = Number(expense.paidAmount) || 0;
-    if (newPaid === 0) {
-      await Payment.deleteMany({ expense: expense._id, flowType: 'OUTGOING' });
-    } else if (newPaid > prevPaid) {
-      const delta = newPaid - prevPaid;
+    const delta = money(desiredPaid - currentPaid);
+    if (delta > 0) {
       await Payment.create({
         flowType: 'OUTGOING',
         site: expense.site,
@@ -391,20 +441,33 @@ exports.updateExpense = async (req, res, next) => {
       });
     }
 
+    await expense.save();
+    // Retain older payment balances if there is missing historical ledger data.
+    let updated = expense;
+    if (currentPaid === clearedTotal) {
+      updated = await recalculateExpensePaymentState(expense._id);
+    } else {
+      expense.paidAmount = desiredPaid;
+      expense.pendingAmount = money(nextAmount - desiredPaid);
+      expense.paymentStatus = desiredPaid === 0 ? 'Pending' : expense.pendingAmount === 0 ? 'Paid' : 'Partial';
+      expense.increment();
+      await expense.save();
+    }
+
     res.status(200).json({
       success: true,
       message: 'Expense updated successfully',
-      data: expense,
+      data: updated,
     });
   } catch (error) {
     next(error);
   }
-};
+});
 
 // @desc    Delete expense
 // @route   DELETE /api/expenses/:id
 // @access  Public
-exports.deleteExpense = async (req, res, next) => {
+exports.deleteExpense = transactionalWrite(async (req, res, next) => {
   try {
     const expense = await Expense.findById(req.params.id);
     if (!expense) {
@@ -413,6 +476,7 @@ exports.deleteExpense = async (req, res, next) => {
 
     // Clean up any OUTGOING payment records linked to this deleted expense
     await Payment.deleteMany({ expense: expense._id });
+    await DailyUpdate.deleteMany({ expense: expense._id });
     await Expense.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
@@ -422,5 +486,5 @@ exports.deleteExpense = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
+});
 

@@ -38,6 +38,7 @@ const expenseSchema = new mongoose.Schema(
       ref: 'Site',
       required: true,
     },
+    submissionKey: { type: String },
     siteName: {
       type: String,
       default: '',
@@ -140,6 +141,8 @@ const expenseSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+expenseSchema.index({ site: 1, submissionKey: 1 }, { unique: true, partialFilterExpression: { submissionKey: { $type: 'string' } } });
 
 module.exports = mongoose.model('Expense', expenseSchema);
 

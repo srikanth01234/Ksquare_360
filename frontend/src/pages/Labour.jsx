@@ -35,8 +35,11 @@ import {
 import AddLabourModal from '../components/AddLabourModal';
 import { LABOUR_WORKER_TYPES } from '../constants/constructionData';
 import { labourApi, siteApi } from '../services/api';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function Labour() {
+  const { getOptions } = useDropdowns();
+  const workerTypesList = getOptions('labour.workerTypes', LABOUR_WORKER_TYPES);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLabour, setEditingLabour] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -387,7 +390,7 @@ export default function Labour() {
               className="appearance-none pl-8 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-xs cursor-pointer"
             >
               <option value="All Labour Types">All Labour Types</option>
-              {LABOUR_WORKER_TYPES.map((type) => (
+              {workerTypesList.map((type) => (
                 <option key={type} value={type}>
                   {type}
                 </option>

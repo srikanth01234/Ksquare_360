@@ -1,3 +1,4 @@
+const getSiteProgress = require('../utils/siteProgress');
 const DailyUpdate = require('../models/DailyUpdate');
 const Site = require('../models/Site');
 
@@ -10,7 +11,7 @@ exports.getSitesOverview = async (req, res, next) => {
 
     const enriched = await Promise.all(
       sites.map(async (s) => {
-        const latest = await DailyUpdate.findOne({ site: s._id }).sort({ date: -1, createdAt: -1 });
+        const latest = await DailyUpdate.findOne({ site: s._id }).sort({ date: -1, createdAt: -1, _id: -1 });
         const count = await DailyUpdate.countDocuments({ site: s._id });
 
         return {
@@ -18,6 +19,7 @@ exports.getSitesOverview = async (req, res, next) => {
           name: s.name,
           code: s.code,
           status: s.status,
+          progress: await getSiteProgress(s),
           client: s.client,
           location: s.location,
           photoUrl: s.photoUrl,
@@ -45,6 +47,8 @@ exports.getSitesOverview = async (req, res, next) => {
 exports.getDailyUpdates = async (req, res, next) => {
   try {
     const { siteId, workPhase, limit = 50 } = req.query;
+    const page = Math.max(0, parseInt(req.query.page, 10) || 0);
+    const pageSize = page ? Math.min(100, Math.max(1, parseInt(limit, 10) || 50)) : parseInt(limit);
     const filter = {};
 
     if (siteId) {
@@ -55,14 +59,18 @@ exports.getDailyUpdates = async (req, res, next) => {
       filter.workPhase = workPhase;
     }
 
-    const updates = await DailyUpdate.find(filter)
+    const query = DailyUpdate.find(filter)
       .populate('site', 'name code location client')
-      .sort({ date: -1, createdAt: -1 })
-      .limit(parseInt(limit));
+      .sort({ date: -1, createdAt: -1, _id: -1 })
+      .limit(pageSize);
+    if (page) query.skip((page - 1) * pageSize);
+    const updates = await query;
+    const totalCount = page ? await DailyUpdate.countDocuments(filter) : undefined;
 
     res.status(200).json({
       success: true,
       count: updates.length,
+      totalCount,
       data: updates,
     });
   } catch (error) {
@@ -75,7 +83,14 @@ exports.getDailyUpdates = async (req, res, next) => {
 // @access  Public
 exports.createDailyUpdate = async (req, res, next) => {
   try {
-    const { siteId, title, description, workPhase, workersCount, weather, supervisorName, date, notes } = req.body;
+    const {
+      siteId, title, description, workPhase, workersCount, weather, supervisorName, date, notes, materialsUsed,
+    } = req.body;
+    const inputProgress = req.body.progress;
+    const progress = inputProgress == null || inputProgress === '' ? undefined : Number(inputProgress);
+    if (progress !== undefined && (!Number.isFinite(progress) || progress < 0 || progress > 100)) {
+      return res.status(400).json({ success: false, message: 'Progress must be between 0 and 100.' });
+    }
 
     if (!siteId || !title || !description) {
       return res.status(400).json({
@@ -111,6 +126,9 @@ exports.createDailyUpdate = async (req, res, next) => {
       title,
       description,
       workPhase: workPhase || 'General Construction',
+      materialsUsed,
+      progress,
+      status: progress === undefined ? undefined : progress === 100 ? 'Completed' : 'In Progress',
       workersCount: parseInt(workersCount) || 0,
       weather: weather || 'Sunny',
       photos,

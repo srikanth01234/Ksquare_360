@@ -32,13 +32,14 @@ import {
   Download,
   CreditCard,
 } from 'lucide-react';
-import { siteApi, expenseApi, dailyUpdateApi, invoiceApi, paymentApi } from '../services/api';
+import { siteApi, expenseApi, dailyUpdateApi, invoiceApi, paymentApi, getAllPages } from '../services/api';
+import { buildDailyUpdatePayload } from '../utils/dailyUpdatePayload';
 import { buildExpensePayload } from '../utils/expensePayload';
 import AddExpenseModal from '../components/AddExpenseModal';
 import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
 import AddSiteModal from '../components/AddSiteModal';
 
-export default function SiteDetails({ site = null, onBack = () => {} }) {
+export default function SiteDetails({ site = null, onBack = () => { } }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [currentSite, setCurrentSite] = useState(site || {
     name: 'New Project',
@@ -67,11 +68,10 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   const [siteExpenses, setSiteExpenses] = useState([]);
   const [siteUpdates, setSiteUpdates] = useState([]);
   const [siteInvoices, setSiteInvoices] = useState([]);
-  const [sitePayments, setSitePayments] = useState([]);
-  const [paymentsLoaded, setPaymentsLoaded] = useState(false);
   const [payingExpense, setPayingExpense] = useState(null);
   const [payForm, setPayForm] = useState({ amount: '', paymentMode: 'Cash', referenceNo: '', notes: '' });
   const [payError, setPayError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch real financial figures & related data from backend
@@ -81,115 +81,127 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
 
   const loadAllSiteData = async () => {
     const sId = site?._id || site?.id;
-    const sName = site?.name;
-    const sCode = site?.code;
-
-    try {
-      if (sId) {
-        const res = await siteApi.getById(sId);
-        if (res && res.data) {
-          setCurrentSite(res.data);
-        }
-      }
-    } catch (err) {
-      console.warn('Could not fetch site details from backend:', err.message);
-    }
-
-    // Fetch live expenses, updates, invoices & payments
-    try {
-      const [expRes, updRes, invRes, payRes] = await Promise.allSettled([
-        expenseApi.getAll(),
-        dailyUpdateApi.getAll(),
-        invoiceApi.getAll(),
-        paymentApi.getAll(),
-      ]);
-
-      if (expRes.status === 'fulfilled') {
-        const allExp = expRes.value?.data || expRes.value || [];
-        const filtered = allExp.filter((e) => {
-          const matchId = sId && (e.siteId === sId || e.site?._id === sId || e.site === sId);
-          const matchName = sName && (e.siteName === sName || e.site?.name === sName);
-          const matchCode = sCode && (e.siteCode === sCode || e.site?.code === sCode);
-          return matchId || matchName || matchCode;
-        });
-        setSiteExpenses(filtered);
-      }
-
-      if (updRes.status === 'fulfilled') {
-        const allUpd = updRes.value?.data || updRes.value || [];
-        const filtered = allUpd.filter((u) => {
-          const matchId = sId && (u.siteId === sId || u.site?._id === sId || u.site === sId);
-          const matchName = sName && (u.siteName === sName || u.site?.name === sName);
-          const matchCode = sCode && (u.siteCode === sCode || u.site?.code === sCode);
-          return matchId || matchName || matchCode;
-        });
-        setSiteUpdates(filtered);
-      }
-
-      if (invRes.status === 'fulfilled') {
-        const allInv = invRes.value?.data || invRes.value || [];
-        const filtered = allInv.filter((i) => {
-          const matchId = sId && (i.siteId === sId || i.site?._id === sId || i.site === sId);
-          const matchName = sName && (i.siteName === sName || i.site?.name === sName);
-          return matchId || matchName;
-        });
-        setSiteInvoices(filtered);
-      }
-
-      if (payRes.status === 'fulfilled') {
-        const allPay = payRes.value?.data || payRes.value || [];
-        const filtered = allPay.filter((p) => {
-          const matchId = sId && (p.siteId === sId || p.site?._id === sId || p.site === sId);
-          const matchName = sName && (p.siteName === sName || p.site?.name === sName);
-          const matchCode = sCode && (p.siteCode === sCode || p.site?.code === sCode);
-          return matchId || matchName || matchCode;
-        });
-        setSitePayments(filtered);
-        setPaymentsLoaded(true);
-      }
-    } catch (err) {
-      console.warn('Could not load site relation records:', err.message);
-    }
+    if (!sId) return;
+    const scope = { siteId: sId };
+    const results = await Promise.allSettled([
+      siteApi.getById(sId),
+      getAllPages(expenseApi.getAll, scope),
+      getAllPages(dailyUpdateApi.getAll, scope),
+      getAllPages(invoiceApi.getAll, scope),
+    ]);
+    const [details, expenses, updates, invoices] = results;
+    if (details.status === 'fulfilled') setCurrentSite(details.value.data);
+    if (expenses.status === 'fulfilled') setSiteExpenses(expenses.value);
+    if (updates.status === 'fulfilled') setSiteUpdates(updates.value);
+    if (invoices.status === 'fulfilled') setSiteInvoices(invoices.value);
+    setLoadError(results.some((result) => result.status === 'rejected')
+      ? 'Some site data could not be refreshed. Try again.' : '');
   };
 
-  // Live dynamic financial calculations from real records
-  const isAddlWork = (e) => Boolean(e.isAdditionalWork || e.expenseType === 'ADDITIONAL_WORK' || e.category === 'Additional Work');
-
-  const dynamicMaterials = siteExpenses
-    .filter((e) => e.category === 'Materials' && !isAddlWork(e))
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const dynamicLabour = siteExpenses
-    .filter((e) => e.category === 'Labour' && !isAddlWork(e))
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const dynamicRental = siteExpenses
-    .filter((e) => (e.category === 'Rental' || e.category === 'Rent' || e.category === 'Vehicle Rent') && !isAddlWork(e))
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const dynamicOther = siteExpenses
-    .filter((e) => e.category === 'Other' && !isAddlWork(e))
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const dynamicNormalExpenses = dynamicMaterials + dynamicLabour + dynamicRental + dynamicOther;
-  const dynamicAddl = siteExpenses
-    .filter((e) => isAddlWork(e))
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const dynamicTotalExpenses = dynamicNormalExpenses + dynamicAddl;
-
-  // Fallback to currentSite document financials if expenses haven't been loaded
-  const materialsExpense = siteExpenses.length > 0 ? dynamicMaterials : (currentSite.financials?.materialsExpense ?? currentSite.materialsExpense ?? 0);
-  const labourExpense = siteExpenses.length > 0 ? dynamicLabour : (currentSite.financials?.labourExpense ?? currentSite.labourExpense ?? 0);
-  const rentalExpense = siteExpenses.length > 0 ? dynamicRental : (currentSite.financials?.rentalExpense ?? currentSite.rentalExpense ?? 0);
-  const additionalWorkExpense = siteExpenses.length > 0 ? dynamicAddl : (currentSite.financials?.additionalWorkExpense ?? currentSite.additionalWorkExpense ?? 0);
-  const normalContractExpenses = siteExpenses.length > 0 ? dynamicNormalExpenses : (currentSite.financials?.normalContractExpenses ?? (materialsExpense + labourExpense + rentalExpense));
-  const totalExpenses = siteExpenses.length > 0 ? dynamicTotalExpenses : (currentSite.financials?.totalExpenses ?? (normalContractExpenses + additionalWorkExpense));
-
-  // Dynamic Client Received Payments
-  const dynamicClientPaid = sitePayments
-    .filter((p) => p.flowType === 'RECEIVED' || p.flowType === 'INCOMING' || p.type === 'Receipt')
-    .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
-  const clientPaid = paymentsLoaded ? dynamicClientPaid : (currentSite.financials?.clientPaid ?? currentSite.clientPaid ?? 0);
-  const excessAmount = clientPaid - totalExpenses;
+  const isAddlWork = (expense) =>
+    expense.isAdditionalWork || expense.expenseType === 'ADDITIONAL_WORK' || expense.category === 'Additional Work';
+  const {
+    materialsExpense = 0,
+    labourExpense = 0,
+    rentalExpense = 0,
+    additionalWorkExpense = 0,
+    additionalMaterialsExpense: apiAddlMat,
+    additionalLabourExpense: apiAddlLab,
+    additionalRentalExpense: apiAddlRent,
+    normalContractExpenses = 0,
+    totalExpenses = 0,
+    clientPaid = 0,
+    excessAmount = 0,
+    clientPending = 0,
+  } = currentSite.financials || {};
   const projectBudget = currentSite.projectBudget ?? currentSite.financials?.projectBudget ?? 0;
-  const clientPending = Math.max(0, projectBudget - clientPaid);
+
+  // Compute Additional Work breakdown (Materials, Labour, Rental, Total)
+  const addlExpensesList = siteExpenses.filter(isAddlWork);
+  const addlMaterialsTotal =
+    apiAddlMat !== undefined
+      ? apiAddlMat
+      : addlExpensesList
+          .filter((e) => e.subCategory === 'Materials')
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const addlLabourTotal =
+    apiAddlLab !== undefined
+      ? apiAddlLab
+      : addlExpensesList
+          .filter((e) => e.subCategory === 'Labour')
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const addlRentalTotal =
+    apiAddlRent !== undefined
+      ? apiAddlRent
+      : addlExpensesList
+          .filter((e) => ['Rental', 'Vehicle Rent', 'Rent'].includes(e.subCategory))
+          .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const addlGrandTotal =
+    additionalWorkExpense ||
+    addlExpensesList.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+  const handlePrintAdditionalWorkPdf = () => {
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return;
+    const rowsHtml =
+      addlExpensesList.length === 0
+        ? '<tr><td colspan="5" style="padding:16px;text-align:center;color:#64748b;">No additional work expenses recorded.</td></tr>'
+        : addlExpensesList
+            .map(
+              (exp, idx) => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${idx + 1}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${exp.date ? new Date(exp.date).toLocaleDateString('en-IN') : '-'}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${exp.subCategory || 'General'}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${exp.description || '-'}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">₹${Number(exp.amount || 0).toLocaleString('en-IN')}</td>
+          </tr>`
+            )
+            .join('');
+
+    win.document.write(`
+      <html>
+        <head>
+          <title>Additional Work Report - ${currentSite.name}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 28px; color: #0f172a; }
+            h1 { margin: 0 0 4px; font-size: 20px; }
+            p { margin: 0 0 18px; color: #475569; font-size: 13px; }
+            .cards { display: flex; gap: 12px; margin-bottom: 20px; }
+            .card { flex: 1; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; background: #f8fafc; }
+            .card .lbl { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+            .card .val { font-size: 16px; font-weight: 800; margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th { background: #f1f5f9; text-align: left; padding: 9px 8px; border-bottom: 2px solid #cbd5e1; }
+          </style>
+        </head>
+        <body>
+          <h1>Additional Work & Expenses Report</h1>
+          <p>${currentSite.name} (${currentSite.code || ''}) &bull; Client: ${currentSite.client || '-'}</p>
+          <div class="cards">
+            <div class="card"><div class="lbl">Addl. Material</div><div class="val">₹${addlMaterialsTotal.toLocaleString('en-IN')}</div></div>
+            <div class="card"><div class="lbl">Addl. Labour</div><div class="val">₹${addlLabourTotal.toLocaleString('en-IN')}</div></div>
+            <div class="card"><div class="lbl">Addl. Rental</div><div class="val">₹${addlRentalTotal.toLocaleString('en-IN')}</div></div>
+            <div class="card" style="background:#faf5ff;border-color:#d8b4fe;"><div class="lbl" style="color:#6b21a8;">Total Additional Work</div><div class="val" style="color:#581c87;">₹${addlGrandTotal.toLocaleString('en-IN')}</div></div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th style="text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+          <script>window.onload = function() { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
 
   const formatCurrency = (val) => '₹' + Number(val || 0).toLocaleString('en-IN');
   const formatDate = (val) => {
@@ -210,14 +222,14 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
     paymentProgressPercent > 90
       ? { stroke: '#ef4444', text: 'text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200' }
       : paymentProgressPercent >= 50
-      ? { stroke: '#f59e0b', text: 'text-amber-600', badge: 'bg-amber-50 text-amber-800 border-amber-200' }
-      : { stroke: '#10b981', text: 'text-emerald-600', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        ? { stroke: '#f59e0b', text: 'text-amber-600', badge: 'bg-amber-50 text-amber-800 border-amber-200' }
+        : { stroke: '#10b981', text: 'text-emerald-600', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 
   const tabs = [
     { id: 'Overview', label: 'Overview', icon: Home },
-    { id: 'Materials', label: 'Materials', icon: Layers, count: siteExpenses.filter(e => e.category === 'Materials').length },
-    { id: 'Labour', label: 'Labour', icon: Users, count: siteExpenses.filter(e => e.category === 'Labour').length },
-    { id: 'Additional Work', label: 'Additional Work', icon: Zap, count: siteExpenses.filter(e => e.category === 'Additional Work').length },
+    { id: 'Materials', label: 'Materials', icon: Layers, count: siteExpenses.filter(e => e.category === 'Materials' && !isAddlWork(e)).length },
+    { id: 'Labour', label: 'Labour', icon: Users, count: siteExpenses.filter(e => e.category === 'Labour' && !isAddlWork(e)).length },
+    { id: 'Additional Work', label: 'Additional Work', icon: Zap, count: siteExpenses.filter(isAddlWork).length },
     { id: 'Expenses', label: 'All Expenses', icon: Wallet, count: siteExpenses.length },
     { id: 'Daily Updates', label: 'Daily Updates', icon: CalendarDays, count: siteUpdates.length },
     { id: 'Billing', label: 'Billing', icon: FileSpreadsheet, count: siteInvoices.length },
@@ -226,11 +238,11 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
   // Activities list (from backend or live updates)
   const recentActivities = siteUpdates.length > 0
     ? siteUpdates.slice(0, 5).map((u) => ({
-        id: u._id || u.id,
-        title: `${u.workPhase || 'Update'}: ${u.title || u.description}`,
-        time: u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'Recent',
-        color: 'bg-emerald-500',
-      }))
+      id: u._id || u.id,
+      title: `${u.workPhase || 'Update'}: ${u.title || u.description}`,
+      time: u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'Recent',
+      color: 'bg-emerald-500',
+    }))
     : currentSite.recentActivities || [];
 
   // Expenses list (from backend or live expenses)
@@ -240,33 +252,14 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
 
   // Handlers for Add modals
   const handleAddExpense = async (newExp) => {
-    try {
-      const payload = buildExpensePayload(newExp, currentSite);
-      await expenseApi.create(payload);
-      await loadAllSiteData();
-    } catch (err) {
-      console.warn('Could not add expense:', err.message);
-      alert(`Could not save expense: ${err.message}`);
-    }
+    const payload = buildExpensePayload({ ...newExp, siteId: currentSite._id || currentSite.id }, currentSite);
+    await expenseApi.create(payload);
+    await loadAllSiteData();
   };
 
   const handleAddUpdate = async (updateData) => {
-    try {
-      const sId = currentSite._id || currentSite.id;
-      await dailyUpdateApi.create({
-        siteId: sId,
-        site: sId,
-        title: updateData.title || updateData.activity || 'Daily Progress',
-        description: updateData.description,
-        workPhase: updateData.workPhase || 'General Construction',
-        workersCount: updateData.workersCount || updateData.labourCount || 0,
-        notes: updateData.notes || '',
-        date: updateData.date,
-      });
-      await loadAllSiteData();
-    } catch (err) {
-      console.warn('Could not add daily update:', err.message);
-    }
+    await dailyUpdateApi.create(buildDailyUpdatePayload(updateData, currentSite._id || currentSite.id));
+    await loadAllSiteData();
   };
 
   const handleDeleteExpense = async (id) => {
@@ -275,7 +268,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
       await expenseApi.delete(id);
       await loadAllSiteData();
     } catch (err) {
-      console.warn('Could not delete expense:', err.message);
+      setLoadError(err.message);
     }
   };
 
@@ -314,10 +307,10 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
           payingExpense.category === 'Materials'
             ? 'Materials'
             : payingExpense.category === 'Labour'
-            ? 'Labour Wages'
-            : payingExpense.category === 'Rental'
-            ? 'Machinery Rental'
-            : 'Other',
+              ? 'Labour Wages'
+              : payingExpense.category === 'Rental'
+                ? 'Machinery Rental'
+                : 'Other',
         amount: payAmt,
         paymentMode: payForm.paymentMode || 'Cash',
         referenceNo: payForm.referenceNo || `PAY-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -350,6 +343,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
 
   return (
     <div className="p-5 md:p-7 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+      {loadError && <p role="alert" className="text-sm text-rose-700">{loadError}</p>}
       {/* 1. Top Bar with Backward Button & Breadcrumbs */}
       <div className="flex items-center justify-between gap-3">
         <button
@@ -433,48 +427,53 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
             </div>
           </div>
 
-          {/* User Request 1: Additional Work & Expenses Breakdown Banner Box */}
-          <div className="p-4 bg-gradient-to-r from-slate-50 via-emerald-50/20 to-white border border-slate-200/90 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs shadow-2xs">
+          {/* Additional Work & Expenses Breakdown Banner Box (Additional Work Only + PDF Report) */}
+          <div className="p-4 bg-gradient-to-r from-purple-50/40 via-slate-50 to-white border border-purple-200/70 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs shadow-2xs">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center font-bold shrink-0">
                 <Zap size={16} />
               </div>
               <div>
                 <div className="font-extrabold text-slate-900 text-xs">Additional Work & Expenses Breakdown</div>
-                <div className="text-[11px] text-slate-500">Live expenditure tracking across site categories</div>
+                <div className="text-[11px] text-slate-500">Additional work expenditure (Material, Labour, Rental)</div>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-              {/* Material */}
+              {/* Additional Material */}
               <div className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-center shadow-2xs min-w-[76px]">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Material</div>
-                <div className="text-xs font-black text-slate-900">{formatCurrency(materialsExpense)}</div>
+                <div className="text-xs font-black text-slate-900">{formatCurrency(addlMaterialsTotal)}</div>
               </div>
 
-              {/* Labour */}
+              {/* Additional Labour */}
               <div className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-center shadow-2xs min-w-[76px]">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Labour</div>
-                <div className="text-xs font-black text-blue-700">{formatCurrency(labourExpense)}</div>
+                <div className="text-xs font-black text-blue-700">{formatCurrency(addlLabourTotal)}</div>
               </div>
 
-              {/* Rental */}
+              {/* Additional Rental */}
               <div className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-center shadow-2xs min-w-[76px]">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Rental</div>
-                <div className="text-xs font-black text-amber-700">{formatCurrency(rentalExpense)}</div>
+                <div className="text-xs font-black text-amber-700">{formatCurrency(addlRentalTotal)}</div>
               </div>
 
-              {/* Additional Work */}
-              <div className="px-3 py-1.5 bg-purple-50/80 border border-purple-200 rounded-xl text-center shadow-2xs min-w-[84px]">
-                <div className="text-[10px] font-extrabold text-purple-700 uppercase tracking-wider">Addl. Work</div>
-                <div className="text-xs font-black text-purple-900">{formatCurrency(additionalWorkExpense)}</div>
+              {/* Total Additional Work */}
+              <div className="px-3.5 py-1.5 bg-purple-700 text-white rounded-xl text-center shadow-xs min-w-[100px]">
+                <div className="text-[10px] font-bold text-purple-100 uppercase tracking-wider">Total Addl.</div>
+                <div className="text-xs font-black">{formatCurrency(addlGrandTotal)}</div>
               </div>
 
-              {/* Total Expenses */}
-              <div className="px-3.5 py-1.5 bg-[#008744] text-white rounded-xl text-center shadow-xs min-w-[90px]">
-                <div className="text-[10px] font-bold text-emerald-100 uppercase tracking-wider">Total</div>
-                <div className="text-xs font-black">{formatCurrency(totalExpenses)}</div>
-              </div>
+              {/* Export PDF Report Button */}
+              <button
+                type="button"
+                onClick={handlePrintAdditionalWorkPdf}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
+                title="Download / Print Additional Work PDF Report"
+              >
+                <FileSpreadsheet size={13} />
+                <span>PDF Report</span>
+              </button>
             </div>
           </div>
         </div>
@@ -530,11 +529,10 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                isActive
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${isActive
                   ? 'bg-[#008744] text-white shadow-sm shadow-emerald-800/20'
                   : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 shadow-2xs'
-              }`}
+                }`}
             >
               <TabIcon size={14} />
               <span>{tab.label}</span>
@@ -629,13 +627,12 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                     </p>
                   </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
-                  excessAmount >= 0
+                <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${excessAmount >= 0
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                     : 'bg-rose-50 text-rose-800 border-rose-300'
-                }`}>
+                  }`}>
                   <span className={`w-2 h-2 rounded-full ${excessAmount >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  <span>Excess in Hand: {formatCurrency(excessAmount)}</span>
+                  <span>Cash in Hand: {formatCurrency(excessAmount)}</span>
                 </span>
               </div>
 
@@ -709,7 +706,7 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                    <span>Excess in Hand: <strong className="text-emerald-700">{formatCurrency(excessAmount)}</strong> ({excessPercent}%)</span>
+                    <span>Cash in Hand: <strong className="text-emerald-700">{formatCurrency(excessAmount)}</strong> ({excessPercent}%)</span>
                   </span>
                   <span className="text-[11px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 font-mono">
                     Excess = Client Paid ({formatCurrency(clientPaid)}) − Spent ({formatCurrency(totalExpenses)})
@@ -812,15 +809,14 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                             <td className="py-2.5 px-1 font-medium text-slate-400">{idx + 1}</td>
                             <td className="py-2.5 px-2 font-medium text-slate-600 whitespace-nowrap">{exp.date ? new Date(exp.date).toLocaleDateString('en-IN') : 'Today'}</td>
                             <td className="py-2.5 px-2">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                                exp.category === 'Materials'
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${exp.category === 'Materials'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                   : exp.category === 'Labour'
-                                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                  : exp.category === 'Rental'
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                  : 'bg-purple-50 text-purple-800 border-purple-200'
-                              }`}>
+                                    ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                    : exp.category === 'Rental'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-purple-50 text-purple-800 border-purple-200'
+                                }`}>
                                 {exp.category}
                               </span>
                             </td>
@@ -1060,9 +1056,9 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                 {(() => {
                   const filteredExp = siteExpenses
                     .filter((e) => {
-                      if (activeTab === 'Materials') return e.category === 'Materials';
-                      if (activeTab === 'Labour') return e.category === 'Labour';
-                      if (activeTab === 'Additional Work') return e.category === 'Additional Work';
+                      if (activeTab === 'Materials') return e.category === 'Materials' && !isAddlWork(e);
+                      if (activeTab === 'Labour') return e.category === 'Labour' && !isAddlWork(e);
+                      if (activeTab === 'Additional Work') return isAddlWork(e);
                       return true;
                     })
                     .filter((e) =>
@@ -1087,15 +1083,14 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                       <td className="py-3.5 px-4 text-center text-slate-400 font-medium">{idx + 1}</td>
                       <td className="py-3.5 px-4 text-slate-600 font-medium whitespace-nowrap">{formatDate(e.date)}</td>
                       <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          e.category === 'Materials'
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${e.category === 'Materials'
                             ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                             : e.category === 'Labour'
-                            ? 'bg-blue-50 text-blue-800 border-blue-200'
-                            : e.category === 'Rental'
-                            ? 'bg-amber-50 text-amber-800 border-amber-200'
-                            : 'bg-purple-50 text-purple-800 border-purple-200'
-                        }`}>
+                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                              : e.category === 'Rental'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-purple-50 text-purple-800 border-purple-200'
+                          }`}>
                           {e.category}
                         </span>
                       </td>
@@ -1131,13 +1126,12 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          e.paymentStatus === 'Paid'
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${e.paymentStatus === 'Paid'
                             ? 'bg-emerald-100 text-emerald-800'
                             : e.paymentStatus === 'Partial'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}>
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
                           {e.paymentStatus || 'Paid'}
                         </span>
                       </td>
@@ -1213,6 +1207,8 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                     </div>
                     <p className="text-xs text-slate-600 mt-1">{u.description || u.notes || '-'}</p>
                     <div className="flex items-center gap-3 text-[11px] text-slate-400 font-medium mt-1.5">
+                      {u.progress != null && <span>Progress {u.progress}% · {u.status}</span>}
+                      {u.materialsUsed && <span>Materials {u.materialsUsed}</span>}
                       <span>Date: <strong className="text-slate-700">{formatDate(u.date)}</strong></span>
                       <span>•</span>
                       <span>Workers Present: <strong className="text-blue-700">{u.workersCount ?? u.labourCount ?? 0}</strong></span>
@@ -1272,9 +1268,8 @@ export default function SiteDetails({ site = null, onBack = () => {} }) {
                       <td className="py-3 px-4 text-right font-bold text-emerald-700">{formatCurrency(inv.paidAmount)}</td>
                       <td className="py-3 px-4 text-right font-bold text-rose-600">{formatCurrency(inv.balanceDue)}</td>
                       <td className="py-3 px-4 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                          inv.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${inv.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
                           {inv.paymentStatus || 'Pending'}
                         </span>
                       </td>

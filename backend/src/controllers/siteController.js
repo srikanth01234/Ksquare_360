@@ -1,3 +1,5 @@
+const getSiteProgress = require('../utils/siteProgress');
+const { isAdditionalWork, money, CLEARED_PAYMENT_STATUSES } = require('../utils/expenseSync');
 const Site = require('../models/Site');
 const Client = require('../models/Client');
 const Expense = require('../models/Expense');
@@ -16,14 +18,23 @@ async function computeSiteFinancials(siteId, projectBudget = 0) {
   let labourExpense = 0;
   let rentalExpense = 0;
   let additionalWorkExpense = 0;
+  let additionalMaterialsExpense = 0;
+  let additionalLabourExpense = 0;
+  let additionalRentalExpense = 0;
+  let additionalOtherExpense = 0;
   let otherExpense = 0;
 
   expenses.forEach((exp) => {
     const amt = exp.amount || 0;
     const cat = exp.category || 'Other';
 
-    if (exp.isAdditionalWork || exp.expenseType === 'ADDITIONAL_WORK' || cat === 'Additional Work') {
+    if (isAdditionalWork(exp)) {
       additionalWorkExpense += amt;
+      const sub = exp.subCategory || '';
+      if (sub === 'Materials') additionalMaterialsExpense += amt;
+      else if (sub === 'Labour') additionalLabourExpense += amt;
+      else if (sub === 'Rental' || sub === 'Vehicle Rent' || sub === 'Rent') additionalRentalExpense += amt;
+      else additionalOtherExpense += amt;
     } else if (cat === 'Materials') {
       materialsExpense += amt;
     } else if (cat === 'Labour') {
@@ -35,23 +46,23 @@ async function computeSiteFinancials(siteId, projectBudget = 0) {
     }
   });
 
-  const normalContractExpenses = materialsExpense + labourExpense + rentalExpense + otherExpense;
-  const totalExpenses = normalContractExpenses + additionalWorkExpense;
+  const normalContractExpenses = money(materialsExpense + labourExpense + rentalExpense + otherExpense);
+  const totalExpenses = money(normalContractExpenses + additionalWorkExpense);
 
   // 2. Aggregate Client Payments (FlowType = RECEIVED)
   const clientPayments = await Payment.find({
     site: siteId,
     flowType: 'RECEIVED',
-    status: { $in: ['Cleared', 'Paid'] },
+    status: { $in: CLEARED_PAYMENT_STATUSES },
   });
 
-  const clientPaid = clientPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const clientPaid = money(clientPayments.reduce((sum, p) => sum + (p.amount || 0), 0));
 
   // 3. Excess Amount (Client Paid - Total Expenses Spent)
-  const excessAmount = clientPaid - totalExpenses;
+  const excessAmount = money(clientPaid - totalExpenses);
 
   // 4. Client Pending Contract Balance
-  const clientPending = Math.max(0, projectBudget - clientPaid);
+  const clientPending = Math.max(0, money(projectBudget - clientPaid));
 
   // 5. Percentages for visual meters
   const cashSpentPct = clientPaid > 0 ? Math.min(100, Math.round((totalExpenses / clientPaid) * 100)) : 0;
@@ -60,11 +71,15 @@ async function computeSiteFinancials(siteId, projectBudget = 0) {
 
   return {
     normalContractExpenses,
-    materialsExpense,
-    labourExpense,
-    rentalExpense,
-    additionalWorkExpense,
-    otherExpense,
+    materialsExpense: money(materialsExpense),
+    labourExpense: money(labourExpense),
+    rentalExpense: money(rentalExpense),
+    additionalWorkExpense: money(additionalWorkExpense),
+    additionalMaterialsExpense: money(additionalMaterialsExpense),
+    additionalLabourExpense: money(additionalLabourExpense),
+    additionalRentalExpense: money(additionalRentalExpense),
+    additionalOtherExpense: money(additionalOtherExpense),
+    otherExpense: money(otherExpense),
     totalExpenses,
     clientPaid,
     excessAmount,
@@ -109,6 +124,7 @@ exports.getSites = async (req, res, next) => {
         const financials = await computeSiteFinancials(s._id, s.projectBudget);
         return {
           ...s.toObject(),
+          progress: await getSiteProgress(s),
           financials,
         };
       })
@@ -182,6 +198,7 @@ exports.getSiteById = async (req, res, next) => {
       success: true,
       data: {
         ...site.toObject(),
+        progress: await getSiteProgress(site),
         financials,
         recentExpenses,
         recentPayments,

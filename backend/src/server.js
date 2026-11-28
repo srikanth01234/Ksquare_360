@@ -51,6 +51,7 @@ app.use('/api/labour', require('./routes/labourRoutes'));
 app.use('/api/daily-updates', require('./routes/dailyUpdateRoutes'));
 app.use('/api/invoices', require('./routes/invoiceRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/settings/dropdowns', require('./routes/dropdownRoutes'));
 
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {

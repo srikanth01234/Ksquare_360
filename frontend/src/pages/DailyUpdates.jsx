@@ -27,12 +27,16 @@ import {
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
 import AddDailyUpdateModal from '../components/AddDailyUpdateModal';
-import { siteApi, dailyUpdateApi, expenseApi } from '../services/api';
+import { dailyUpdateApi, expenseApi, getAllPages } from '../services/api';
+import { buildDailyUpdatePayload } from '../utils/dailyUpdatePayload';
 import { buildExpensePayload } from '../utils/expensePayload';
 
 export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   // Navigation: null = All Sites Cards View; object = Dedicated Site Daily Updates Detail View
   const [activeSite, setActiveSite] = useState(null);
+
+  const activeSiteId = activeSite?._id || activeSite?.id;
+  const [loadError, setLoadError] = useState('');
 
   // Modals & Filters
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
@@ -49,150 +53,64 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   // Live Daily Updates Activity Records from MongoDB Atlas
   const [updates, setUpdates] = useState([]);
 
-  useEffect(() => {
-    loadSitesAndUpdates();
-  }, []);
-
-  const loadSitesAndUpdates = async () => {
+  const loadSitesAndUpdates = async (siteId, signal) => {
     try {
-      const [overviewRes, updatesRes] = await Promise.all([
-        dailyUpdateApi.getSitesOverview().catch(() => siteApi.getAll().catch(() => ({ data: [] }))),
-        dailyUpdateApi.getAll().catch(() => ({ data: [] })),
+      const [overview, rows] = await Promise.all([
+        dailyUpdateApi.getSitesOverview(),
+        siteId ? getAllPages(dailyUpdateApi.getAll, { siteId }) : [],
       ]);
-
-      const rawSites = overviewRes.data || overviewRes || [];
-      const formattedSites = rawSites.map((s, idx) => ({
-        ...s,
-        id: s._id || s.id || String(idx + 1).padStart(2, '0'),
-        shortCode: s.code ? s.code.split('-').slice(0, 2).join('-') : 'KS',
-        updatesCount: s.totalUpdatesCount ?? s.updatesCount ?? 0,
-        lastUpdated: s.lastUpdated ? new Date(s.lastUpdated).toLocaleDateString('en-IN') : 'Recent',
-        progress: s.progress ?? (s.status === 'Completed' ? 100 : s.status === 'On Hold' ? 30 : 15),
-      }));
-      setSitesDirectory(formattedSites);
-
-      const rawUpdates = updatesRes.data || updatesRes || [];
-      const formattedUpdates = rawUpdates.map((u, idx) => ({
-        ...u,
-        id: u._id || u.id || String(idx + 1).padStart(2, '0'),
-        date: u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'Today',
-        siteName: u.siteName || (u.site?.name) || 'Site',
-        siteCode: u.siteCode || (u.site?.code) || '',
-        activity: u.title || u.workPhase || u.activity || 'Site Work',
-        description: u.description || u.notes || '',
-        labourCount: u.workersCount ?? u.laboursPresent ?? u.labourCount ?? 0,
-        materialsUsed: u.materialsUsed || '-',
-        duration: u.duration || '8 hrs',
-        progress: u.progress || 50,
-        status: u.status || 'Completed',
-      }));
-      setUpdates(formattedUpdates);
-    } catch (err) {
-      console.warn('Could not load daily updates from backend:', err.message);
-      setSitesDirectory([]);
-      setUpdates([]);
+      if (signal?.aborted) return;
+      setSitesDirectory(overview.data.map((site) => ({
+        ...site,
+        id: site._id,
+        updatesCount: site.totalUpdatesCount,
+        lastUpdated: site.lastUpdated ? new Date(site.lastUpdated).toLocaleDateString('en-IN') : 'Recent',
+      })));
+      setUpdates(rows.map((update) => ({
+        ...update,
+        id: update._id,
+        date: update.date ? new Date(update.date).toLocaleDateString('en-IN') : 'Today',
+        activity: update.title || update.workPhase || 'Site Work',
+        description: update.description || update.notes || '',
+        labourCount: update.workersCount ?? update.laboursPresent ?? update.labourCount ?? 0,
+      })));
+      setActiveSite((previous) => previous
+        ? overview.data.find((site) => site._id === previous._id) || previous
+        : null);
+      setLoadError('');
+    } catch (error) {
+      if (!signal?.aborted) setLoadError(error.message);
     }
   };
 
-  const handleAddUpdate = async (updateData) => {
-    try {
-      const targetSite =
-        sitesDirectory.find(
-          (s) =>
-            (updateData.siteId && (s._id === updateData.siteId || s.id === updateData.siteId)) ||
-            s.name === updateData.siteName ||
-            s.code === updateData.siteCode ||
-            (activeSite && (s._id === activeSite._id || s.id === activeSite.id))
-        ) || activeSite || sitesDirectory[0];
+  useEffect(() => {
+    const request = new AbortController();
+    setUpdates([]);
+    loadSitesAndUpdates(activeSiteId, request.signal);
+    return () => request.abort();
+  }, [activeSiteId]);
 
-      const targetSiteId = updateData.siteId || (targetSite ? (targetSite._id || targetSite.id) : null);
-      if (targetSiteId) {
-        await dailyUpdateApi.create({
-          siteId: targetSiteId,
-          site: targetSiteId,
-          siteName: targetSite?.name || updateData.siteName,
-          siteCode: targetSite?.code || updateData.siteCode,
-          title: updateData.title || updateData.activity || 'Daily Progress',
-          description: updateData.description,
-          workPhase: updateData.workPhase || 'General Construction',
-          workersCount: updateData.workersCount || updateData.labourCount || 0,
-          materialsUsed: updateData.materialsUsed || '',
-          notes: updateData.notes || '',
-          date: updateData.date,
-        });
-        await loadSitesAndUpdates();
-        return;
-      }
-    } catch (err) {
-      console.warn('Could not save daily update to DB:', err.message);
-    }
-
-    setUpdates((prev) => [{ ...updateData, id: `tmp_${Date.now()}` }, ...prev]);
+  const handleAddUpdate = async (update) => {
+    const siteId = activeSiteId || update.siteId;
+    await dailyUpdateApi.create(buildDailyUpdatePayload(update, siteId));
+    await loadSitesAndUpdates(activeSiteId);
   };
 
-  // Handle adding an expense recorded from the Site Detail page
-  const handleAddExpenseFromModal = async (newExp) => {
-    const targetSite =
-      activeSite ||
-      sitesDirectory.find(
-        (s) =>
-          (newExp.siteId && (s._id === newExp.siteId || s.id === newExp.siteId)) ||
-          s.name === newExp.siteName ||
-          s.code === newExp.siteCode
-      );
-    const siteId = targetSite ? (targetSite._id || targetSite.id) : newExp.siteId;
-    const targetSiteName = targetSite ? targetSite.name : newExp.siteName || 'Site';
-    const targetSiteCode = targetSite ? targetSite.code || targetSite.shortCode || '' : newExp.siteCode || '';
-
-    if (!siteId) {
-      alert('Could not identify the construction site. Please select a valid site.');
-      return;
-    }
-
-    try {
-      const payload = buildExpensePayload(newExp, {
-        _id: siteId,
-        name: targetSiteName,
-        code: targetSiteCode,
-      });
-
-      await expenseApi.create(payload);
-
-      await dailyUpdateApi.create({
-        siteId,
-        site: siteId,
-        siteName: targetSiteName,
-        siteCode: targetSiteCode,
-        title: `${payload.category} Expense: ${payload.description}`,
-        description: `${payload.description} (₹${Number(payload.amount).toLocaleString('en-IN')}) - ${payload.paymentStatus}`,
-        workPhase: payload.category,
-        workersCount: payload.category === 'Labour' ? Number(payload.quantity) || 1 : 0,
-        date: payload.date || new Date().toISOString(),
-      });
-
-      await loadSitesAndUpdates();
-      onExpenseAdded({
-        ...payload,
-        siteName: targetSiteName,
-        siteCode: targetSiteCode,
-        siteId,
-      });
-    } catch (err) {
-      console.warn('Failed saving expense update to DB:', err.message);
-      alert(`Could not save expense: ${err.message}`);
-    }
+  const handleAddExpenseFromModal = async (expense) => {
+    if (!activeSiteId) throw new Error('Select a valid construction site.');
+    const payload = buildExpensePayload({ ...expense, siteId: activeSiteId }, activeSite);
+    await expenseApi.create({ ...payload, logDailyActivity: true });
+    await loadSitesAndUpdates(activeSiteId);
+    onExpenseAdded(payload);
   };
 
   const handleDeleteUpdate = async (id) => {
     try {
-      if (id && !String(id).startsWith('tmp_')) {
-        await dailyUpdateApi.delete(id);
-      }
-    } catch (err) {
-      console.warn('Could not delete daily update in DB:', err.message);
+      await dailyUpdateApi.delete(id);
+      await loadSitesAndUpdates(activeSiteId);
+    } catch (error) {
+      setLoadError(error.message);
     }
-    setUpdates((prev) => prev.filter((u) => u.id !== id && u._id !== id));
-    loadSitesAndUpdates();
   };
 
   // Filtered sites for Cards view
@@ -212,13 +130,6 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
   // Filtered activities for active site detail view
   const siteActivities = activeSite
     ? updates.filter((u) => {
-        const belongsToSite =
-          (activeSite._id && (u.siteId === activeSite._id || u.site?._id === activeSite._id || u.site === activeSite._id)) ||
-          (activeSite.id && u.siteId === activeSite.id) ||
-          u.siteName === activeSite.name ||
-          u.siteCode === activeSite.shortCode ||
-          u.siteCode === activeSite.code;
-
         const matchesQuery =
           u.activity.toLowerCase().includes(activitySearchQuery.toLowerCase()) ||
           u.description.toLowerCase().includes(activitySearchQuery.toLowerCase());
@@ -227,12 +138,13 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
           selectedActivityFilter === 'All Activities' ||
           u.activity.toLowerCase().includes(selectedActivityFilter.toLowerCase());
 
-        return belongsToSite && matchesQuery && matchesActivity;
+        return matchesQuery && matchesActivity;
       })
     : [];
 
   return (
     <div className="p-4 md:p-7 space-y-6 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+      {loadError && <p role="alert" className="text-sm text-rose-700">{loadError}</p>}
       {/* =========================================================================
           VIEW 1: ALL SITES AS CARDS VIEW (When activeSite is null)
           ========================================================================= */}
@@ -495,7 +407,15 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-3 self-stretch sm:self-auto justify-end">
+            <div className="flex flex-wrap items-center gap-3 self-stretch sm:self-auto justify-end">
+              <button
+                type="button"
+                onClick={() => setIsUpdateModalOpen(true)}
+                className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-2.5 text-xs font-bold text-emerald-800 hover:bg-emerald-50"
+              >
+                <CalendarCheck size={16} />
+                Log Update
+              </button>
               <button
                 onClick={() => setIsExpenseModalOpen(true)}
                 className="flex items-center gap-2 bg-[#008744] hover:bg-[#00743a] text-white rounded-xl px-5 py-2.5 text-xs font-bold shadow-md shadow-emerald-800/20 transition-all cursor-pointer whitespace-nowrap"
@@ -669,6 +589,7 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
 
                         <td className="py-3.5 px-4 text-slate-600 font-medium max-w-sm truncate">
                           {item.description}
+                          {item.materialsUsed && <div className="mt-1 text-xs">Materials {item.materialsUsed}</div>}
                         </td>
 
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
@@ -709,7 +630,8 @@ export default function DailyUpdates({ onExpenseAdded = () => {} }) {
                         </td>
 
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          {item.status === 'Completed' ? (
+                          {item.progress != null && <div className="mb-1 text-xs font-semibold">{item.progress}%</div>}
+                          {!item.status ? <span className="text-xs text-slate-500">—</span> : item.status === 'Completed' ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
                               <CheckCircle2 size={11} />
                               Completed

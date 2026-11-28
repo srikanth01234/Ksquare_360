@@ -23,6 +23,7 @@ import {
   CONTRACT_WORK_TYPES,
 } from '../constants/constructionData';
 import { siteApi } from '../services/api';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function AddLabourModal({
   isOpen,
@@ -31,6 +32,9 @@ export default function AddLabourModal({
   workerToEdit = null,
   onUpdateLabour = null,
 }) {
+  const { getOptions } = useDropdowns();
+  const workerTypesList = getOptions('labour.workerTypes', LABOUR_WORKER_TYPES);
+  const contractWorkTypesList = getOptions('labour.contractWorkTypes', CONTRACT_WORK_TYPES);
   const [activeTab, setActiveTab] = useState('Daily Wage'); // 'Daily Wage' | 'Labour Contract'
   const [sitesList, setSitesList] = useState([]);
   const [formData, setFormData] = useState({
@@ -335,7 +339,7 @@ export default function AddLabourModal({
                     className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   >
                     <option value="">Select work type</option>
-                    {CONTRACT_WORK_TYPES.map((type) => (
+                    {contractWorkTypesList.map((type) => (
                       <option key={type} value={type}>
                         {type}
                       </option>
@@ -355,7 +359,7 @@ export default function AddLabourModal({
                     onChange={(e) => setFormData({ ...formData, labourType: e.target.value })}
                     className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   >
-                    {LABOUR_WORKER_TYPES.map((type) => (
+                    {workerTypesList.map((type) => (
                       <option key={type} value={type}>
                         {type}
                       </option>

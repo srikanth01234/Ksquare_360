@@ -48,9 +48,7 @@ export default function Sites({ onSelectSite = () => {} }) {
         const budgetNum = Number(s.projectBudget ?? s.financials?.projectBudget ?? 0);
         const clientPaidNum = Number(s.financials?.clientPaid ?? s.clientPaid ?? 0);
         const computedProgress =
-          s.status === 'Completed'
-            ? 100
-            : budgetNum > 0
+          clientPaidNum > 0 && budgetNum > 0
             ? Math.min(100, Math.round((clientPaidNum / budgetNum) * 100))
             : 0;
         return {
@@ -58,7 +56,7 @@ export default function Sites({ onSelectSite = () => {} }) {
           id: s._id || s.id || String(idx + 1).padStart(2, '0'),
           clientAvatar: s.client ? s.client[0].toUpperCase() : 'C',
           budget: s.budget || (budgetNum > 0 ? `₹${budgetNum.toLocaleString('en-IN')}` : '₹0'),
-          progress: s.progress ?? computedProgress,
+          progress: computedProgress,
         };
       });
       setSites(formatted);
@@ -362,6 +360,7 @@ export default function Sites({ onSelectSite = () => {} }) {
                 <th className="py-3.5 px-4">Type</th>
                 <th className="py-3.5 px-4">Location</th>
                 <th className="py-3.5 px-4">Budget</th>
+                <th className="py-3.5 px-4">Expenses</th>
                 <th className="py-3.5 px-4 w-44">Progress</th>
                 <th className="py-3.5 px-4 text-center">Status</th>
                 <th className="py-3.5 px-4 text-center">Actions</th>
@@ -370,7 +369,7 @@ export default function Sites({ onSelectSite = () => {} }) {
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredSites.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-400">
+                  <td colSpan="10" className="py-12 text-center text-slate-400">
                     <Building2 className="w-10 h-10 mx-auto mb-2 text-slate-300 opacity-60" />
                     <p className="font-bold text-slate-700 text-sm">No construction sites found</p>
                     <p className="text-xs text-slate-400 mt-0.5">Create a new site in Master Data → Sites to get started.</p>
@@ -435,16 +434,36 @@ export default function Sites({ onSelectSite = () => {} }) {
                     {site.budget}
                   </td>
 
+                  <td className="py-4 px-4 whitespace-nowrap text-xs">
+                    <div className="font-bold text-slate-900">₹{(site.financials?.totalExpenses ?? 0).toLocaleString('en-IN')}</div>
+                    <div className="text-slate-500">Normal ₹{(site.financials?.normalContractExpenses ?? 0).toLocaleString('en-IN')}</div>
+                    <div className="text-purple-700">Additional ₹{(site.financials?.additionalWorkExpense ?? 0).toLocaleString('en-IN')}</div>
+                  </td>
+
                   {/* Progress */}
                   <td className="py-4 px-4">
                     <div className="space-y-1.5">
-                      <div className="text-[11px] font-bold text-slate-700">
-                        {site.progress}%
+                      <div
+                        className={`text-[11px] font-bold ${
+                          (site.progress ?? 0) > 90
+                            ? 'text-rose-600'
+                            : (site.progress ?? 0) >= 50
+                            ? 'text-amber-700'
+                            : 'text-emerald-700'
+                        }`}
+                      >
+                        {site.progress ?? 0}%
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className="bg-[#0072ff] h-full rounded-full transition-all duration-500"
-                          style={{ width: `${site.progress}%` }}
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            (site.progress ?? 0) > 90
+                              ? 'bg-rose-500'
+                              : (site.progress ?? 0) >= 50
+                              ? 'bg-amber-400'
+                              : 'bg-emerald-500'
+                          }`}
+                          style={{ width: `${site.progress ?? 0}%` }}
                         />
                       </div>
                     </div>

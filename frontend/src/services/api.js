@@ -3,7 +3,15 @@
  * Connects React 19 Frontend with Node.js / Express / MongoDB Atlas Backend
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ksquare-360-backend.onrender.com/api';
+const RAW_API_URL = (
+  import.meta.env.VITE_API_URL || 'https://ksquare-360.onrender.com/api'
+)
+  .trim()
+  .replace(/\/+$/, '');
+
+const API_BASE_URL = RAW_API_URL.endsWith('/api')
+  ? RAW_API_URL
+  : `${RAW_API_URL}/api`;
 
 /**
  * Universal request helper with error handling & JSON formatting
@@ -52,6 +60,18 @@ function buildQuery(params = {}) {
   });
   const str = query.toString();
   return str ? `?${str}` : '';
+}
+
+// Read every server page for screens with existing client-side filters and pagination.
+export async function getAllPages(getPage, params = {}) {
+  const limit = 100;
+  const first = await getPage({ ...params, page: 1, limit });
+  const rows = [...first.data];
+  for (let page = 2; (page - 1) * limit < first.totalCount; page += 1) {
+    const response = await getPage({ ...params, page, limit });
+    rows.push(...response.data);
+  }
+  return rows;
 }
 
 // 1. Master Materials API
@@ -190,6 +210,29 @@ export const reportApi = {
   getFinancialOverview: () => request('/reports/financial-overview'),
 };
 
+// 10. Dynamic Dropdowns Settings API
+export const dropdownApi = {
+  getAll: (params) => request(`/settings/dropdowns${buildQuery(params)}`),
+  update: (key, data) =>
+    request(`/settings/dropdowns/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  create: (data) =>
+    request('/settings/dropdowns', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  delete: (key) =>
+    request(`/settings/dropdowns/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    }),
+  reset: (key) =>
+    request(`/settings/dropdowns/${encodeURIComponent(key)}/reset`, {
+      method: 'POST',
+    }),
+};
+
 export default {
   material: materialApi,
   client: clientApi,
@@ -202,5 +245,6 @@ export default {
   dailyUpdate: dailyUpdateApi,
   invoice: invoiceApi,
   report: reportApi,
+  dropdown: dropdownApi,
 };
 

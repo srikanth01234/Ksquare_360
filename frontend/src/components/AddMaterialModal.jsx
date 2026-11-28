@@ -9,8 +9,12 @@ import {
   Layers,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS } from '../constants/constructionData';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
+  const { getOptions } = useDropdowns();
+  const materialCategories = getOptions('masterData.materialCategories', ['Cement', 'Steel', 'Bricks', 'Blocks', 'Sand', 'Aggregates', 'Paste', 'Paint']);
+  const materialUnits = getOptions('masterData.materialUnits', ['Bags', 'Kg', 'Tonnes', 'Pieces', 'Numbers', 'Cubic Feet', 'Loads', 'Liters']);
   const [formData, setFormData] = useState({
     name: '',
     category: 'Cement',
@@ -121,11 +125,11 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
                 >
-                  <option value="Cement">Cement</option>
-                  <option value="Steel">Steel</option>
-                  <option value="Bricks">Bricks</option>
-                  <option value="Aggregates">Aggregates / Sand</option>
-                  <option value="Paint">Paint</option>
+                  {materialCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -140,14 +144,11 @@ export default function AddMaterialModal({ isOpen, onClose, onSaveMaterial }) {
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
                 >
-                  <option value="Bags">Bags</option>
-                  <option value="Kg">Kg</option>
-                  <option value="Tonnes">Tonnes</option>
-                  <option value="Pieces">Pieces</option>
-                  <option value="Numbers">Numbers</option>
-                  <option value="Cubic Feet">Cubic Feet</option>
-                  <option value="Loads">Loads</option>
-                  <option value="Liters">Liters</option>
+                  {materialUnits.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
                 </select>
               </div>
 

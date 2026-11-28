@@ -36,7 +36,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import AddExpenseModal from '../components/AddExpenseModal';
-import { expenseApi, siteApi, paymentApi } from '../services/api';
+import { getAllPages, expenseApi, siteApi, paymentApi } from '../services/api';
 import { buildExpensePayload } from '../utils/expensePayload';
 
 export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
@@ -77,13 +77,20 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
   ];
 
   // Live Expenses List from MongoDB Atlas
+  const [summary, setSummary] = useState({});
+  const [loadError, setLoadError] = useState('');
   const [expenses, setExpenses] = useState([]);
   const [sitesList, setSitesList] = useState([]);
 
   useEffect(() => {
-    loadExpenses();
     loadSites();
   }, []);
+
+  useEffect(() => {
+    const request = new AbortController();
+    loadExpenses(request.signal);
+    return () => request.abort();
+  }, [selectedSite]);
 
   const getCategoryStyle = (cat) => {
     switch (cat) {
@@ -112,10 +119,16 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
     }
   };
 
-  const loadExpenses = async () => {
+  const loadExpenses = async (signal) => {
+    const siteId = selectedSite === 'All Sites' ? undefined : selectedSite;
     try {
-      const res = await expenseApi.getAll();
-      const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+      const [list, totals] = await Promise.all([
+        getAllPages(expenseApi.getAll, { siteId }),
+        expenseApi.getSummary(siteId),
+      ]);
+      if (signal?.aborted) return;
+      setSummary(totals.data);
+      setLoadError('');
       const formatted = list.map((e, idx) => {
         const cat = e.category || 'Other';
         const style = getCategoryStyle(cat);
@@ -144,20 +157,14 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
       });
       setExpenses(formatted);
     } catch (err) {
-      console.warn('Could not fetch expenses from backend:', err.message);
-      setExpenses([]);
+      if (!signal?.aborted) setLoadError(err.message);
     }
   };
 
   const handleAddExpense = async (newExp) => {
-    try {
-      const payload = buildExpensePayload(newExp, sitesList[0]);
-      await expenseApi.create(payload);
-      await loadExpenses();
-    } catch (err) {
-      console.warn('API expense create error:', err.message);
-      alert(`Could not save expense: ${err.message}`);
-    }
+    const payload = buildExpensePayload(newExp, null);
+    await expenseApi.create(payload);
+    await loadExpenses();
   };
 
   const handleOpenPayModal = (exp) => {
@@ -218,8 +225,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
       await expenseApi.delete(id);
       await loadExpenses();
     } catch (err) {
-      console.warn('API expense delete fallback:', err.message);
-      setExpenses(expenses.filter((item) => item.id !== id && item._id !== id));
+      setLoadError(err.message);
     }
   };
 
@@ -245,33 +251,15 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
         description: editForm.description,
         supplierName: editForm.supplierName,
         amount: parsedAmt,
-        paymentStatus: editForm.paymentStatus,
+        ...(editForm.paymentStatus !== (editingExpense.paymentStatus || editingExpense.payment)
+          ? { paymentStatus: editForm.paymentStatus } : {}),
         paymentMode: editForm.paymentMode,
         date: editForm.date,
       });
       await loadExpenses();
       setEditingExpense(null);
     } catch (err) {
-      console.warn('Could not update expense in backend:', err.message);
-      // Fallback local update
-      setExpenses((prev) =>
-        prev.map((item) =>
-          item.id === editingExpense.id || item._id === editingExpense._id
-            ? {
-                ...item,
-                description: editForm.description,
-                supplier: editForm.supplierName,
-                supplierName: editForm.supplierName,
-                rawAmount: parseFloat(editForm.amount) || 0,
-                amount: `₹${(parseFloat(editForm.amount) || 0).toLocaleString('en-IN')}`,
-                paymentStatus: editForm.paymentStatus,
-                paymentMode: editForm.paymentMode,
-                date: new Date(editForm.date).toLocaleDateString('en-IN'),
-              }
-            : item
-        )
-      );
-      setEditingExpense(null);
+      setLoadError(err.message);
     }
   };
 
@@ -333,7 +321,7 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
     const matchesSearch = !query || desc.includes(query) || supp.includes(query) || siteN.includes(query);
 
     // 3. Site filter
-    const matchesSite = selectedSite === 'All Sites' || exp.siteName === selectedSite;
+    const matchesSite = selectedSite === 'All Sites' || (exp.site?._id || exp.siteId || exp.site) === selectedSite;
 
     // 4. Category dropdown
     let matchesCategory = true;
@@ -375,36 +363,13 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
   const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / itemsPerPage));
   const paginatedExpenses = filteredExpenses.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const totalExpensesAmt = currentExpenses.reduce((sum, e) => {
-    const raw = typeof e.rawAmount === 'number' ? e.rawAmount : typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount).replace(/[^\d.]/g, '')) || 0;
-    return sum + raw;
-  }, 0);
-
-  const paidExpensesAmt = currentExpenses.reduce((sum, e) => {
-    const raw = typeof e.rawAmount === 'number' ? e.rawAmount : typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount).replace(/[^\d.]/g, '')) || 0;
-    if (e.paymentStatus === 'Paid') {
-      return sum + (e.paidAmount > 0 ? e.paidAmount : raw);
-    }
-    if (e.paymentStatus === 'Partial') {
-      return sum + (Number(e.paidAmount) || 0);
-    }
-    return sum;
-  }, 0);
-
-  const pendingExpensesAmt = Math.max(0, totalExpensesAmt - paidExpensesAmt);
-
-  const additionalWorkAmt = currentExpenses.reduce((sum, e) => {
-    if (e.category === 'Additional Work' || e.isAdditionalWork || e.expenseType === 'ADDITIONAL_WORK') {
-      const raw = typeof e.rawAmount === 'number' ? e.rawAmount : typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount).replace(/[^\d.]/g, '')) || 0;
-      return sum + raw;
-    }
-    return sum;
-  }, 0);
-
-  const formatCurrency = (val) => '₹' + Number(val || 0).toLocaleString('en-IN');
+  const { totalExpenses: totalExpensesAmt = 0, paidAmount: paidExpensesAmt = 0,
+    pendingAmount: pendingExpensesAmt = 0, additionalWorkExpenses: additionalWorkAmt = 0 } = summary;
+  const formatCurrency = (value) => '₹' + Number(value || 0).toLocaleString('en-IN');
 
   return (
     <div className="p-5 md:p-8 space-y-5 w-full bg-[#f8fafc] min-h-[calc(100vh-4rem)]">
+      {loadError && <p role="alert" className="text-sm text-rose-700">{loadError}</p>}
       {/* 1. Breadcrumb */}
       <nav className="flex items-center gap-2 text-xs font-medium text-slate-500">
         <Home size={13} className="text-slate-400" />
@@ -563,8 +528,8 @@ export default function SiteExpenses({ onSelectSiteExpense = () => {} }) {
             >
               <option value="All Sites">All Sites</option>
               {Array.isArray(sitesList) && sitesList.map((s) => (
-                <option key={s._id || s.id} value={s.name}>
-                  {s.name}
+                <option key={s._id || s.id} value={s._id || s.id}>
+                  {s.name} ({s.code})
                 </option>
               ))}
             </select>

@@ -24,6 +24,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { clientApi } from '../services/api';
+import { useDropdowns } from '../context/DropdownContext';
 
 // Structured Project Code Generator (e.g. CHN-11-2026-NB-01 or MDU-11-2026-RE-01)
 const generateStructuredProjectCode = (
@@ -57,6 +58,10 @@ export default function AddSiteModal({
   siteToEdit = null,
   onUpdateSite = null,
 }) {
+  const { getOptions } = useDropdowns();
+  const cityOptions = getOptions('sites.cities', ['Chennai', 'Madurai', 'Trichy', 'Tirunelveli', 'Coimbatore', 'Salem']);
+  const stateOptions = getOptions('sites.states', ['Tamil Nadu', 'Kerala', 'Karnataka', 'Andhra Pradesh']);
+  const statusOptions = getOptions('sites.statuses', ['Active', 'Completed', 'On Hold']);
   const [projectType, setProjectType] = useState('New Building');
   const [runningNumber, setRunningNumber] = useState('01');
   const [formData, setFormData] = useState({
@@ -657,12 +662,11 @@ export default function AddSiteModal({
                         onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                         className="w-full appearance-none px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 pr-8 shadow-2xs cursor-pointer"
                       >
-                        <option value="Chennai">Chennai (CHN)</option>
-                        <option value="Madurai">Madurai (MDU)</option>
-                        <option value="Trichy">Trichy (TRY)</option>
-                        <option value="Tirunelveli">Tirunelveli (TNV)</option>
-                        <option value="Coimbatore">Coimbatore (CBE)</option>
-                        <option value="Salem">Salem (SLM)</option>
+                        {cityOptions.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>
@@ -678,10 +682,11 @@ export default function AddSiteModal({
                         onChange={(e) => setFormData({ ...formData, state: e.target.value })}
                         className="w-full appearance-none px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 pr-8 shadow-2xs cursor-pointer"
                       >
-                        <option value="Tamil Nadu">Tamil Nadu</option>
-                        <option value="Kerala">Kerala</option>
-                        <option value="Karnataka">Karnataka</option>
-                        <option value="Andhra Pradesh">Andhra Pradesh</option>
+                        {stateOptions.map((st) => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>
@@ -856,9 +861,11 @@ export default function AddSiteModal({
                         onChange={(e) => setFormData({ ...formData, status: e.target.value })}
                         className="w-full appearance-none px-3.5 py-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 pr-8 shadow-2xs cursor-pointer"
                       >
-                        <option value="Active">Active (Ongoing construction)</option>
-                        <option value="Completed">Completed (Work finished)</option>
-                        <option value="On Hold">On Hold (Temporarily stopped)</option>
+                        {statusOptions.map((st) => (
+                          <option key={st} value={st}>
+                            {st}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                     </div>

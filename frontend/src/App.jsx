@@ -18,6 +18,7 @@ import MasterData from './pages/MasterData';
 import Godown from './pages/Godown';
 import Payments from './pages/Payments';
 import { INITIAL_MATERIALS } from './constants/materialsData';
+import { DropdownProvider } from './context/DropdownContext';
 
 export default function App() {
   const [activeNav, setActiveNav] = useState('Dashboard');
@@ -42,6 +43,7 @@ export default function App() {
   };
 
   return (
+    <DropdownProvider>
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 font-sans antialiased text-slate-800">
       {/* 1. Sidebar */}
       <Sidebar
@@ -190,5 +192,6 @@ export default function App() {
         </main>
       </div>
     </div>
+    </DropdownProvider>
   );
 }

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
 import { siteApi, labourApi } from '../services/api';
+import { useDropdowns } from '../context/DropdownContext';
 
 // Material type classification helpers
 const isSteelMaterial = (name) => name === 'Steel';
@@ -141,9 +142,50 @@ export default function AddExpenseModal({
   onAddExpense,
   lockedSite = null,
 }) {
+  const { getOptions } = useDropdowns();
+  const vehicleTypeOptions = getOptions('expenses.vehicleTypes', [
+    'Tata Ace / Mini Truck',
+    'Pickup / Bolero Truck',
+    'Tipper / Dumper',
+    'Tractor',
+    '6-Wheeler Lorry',
+    '10-Wheeler Lorry',
+    'Auto / 3-Wheeler',
+    'Other Vehicle',
+  ]);
+  const rentalEquipmentOptions = getOptions('expenses.rentalEquipment', [
+    'JCB / Excavator',
+    'Concrete Mixer Machine',
+    'Generator (DG Set)',
+    'Tractor',
+    'Crane',
+    'Scaffolding',
+    'Tipper / Dumper',
+    'Earth Compactor / Roller',
+    'Concrete Vibrator / Needle',
+    'Other Machinery',
+  ]);
+  const rentalUnitOptions = getOptions('expenses.rentalUnits', [
+    'Hours',
+    'Days',
+    'Shifts',
+    'Trips',
+    'Months',
+  ]);
   const fileInputRef = useRef(null);
   const [sitesList, setSitesList] = useState([]);
   const [labourList, setLabourList] = useState([]);
+  const saving = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const submissionKey = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      submissionKey.current = null;
+      setSaveError('');
+    }
+  }, [isOpen]);
   const [paymentError, setPaymentError] = useState('');
   const [mainTab, setMainTab] = useState('Expenses'); // 'Expenses' | 'Additional Work'
   const [formData, setFormData] = useState({
@@ -680,10 +722,20 @@ export default function AddExpenseModal({
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving.current) return;
+    setSaveError('');
     setPaymentError('');
     if (!formData.description) return;
+
+    if (mainTab === 'Expenses' && formData.category === 'Rental') {
+      const rRate = parseFloat(formData.rentalRate);
+      if (isNaN(rRate) || rRate <= 0) {
+        setPaymentError('Rental rate must be greater than 0 (decimals like 0.1 or 0.2 are allowed).');
+        return;
+      }
+    }
 
     // Validate Payment Status & Partial Payment
     if (formData.paymentStatus !== 'Pending' && !formData.paymentMethod) {
@@ -806,12 +858,97 @@ export default function AddExpenseModal({
       transactionId: formData.transactionId ? formData.transactionId.trim() : null,
       paymentScreenshot: screenshotPreview || null,
       notes: formData.notes || '',
-      materialItems: formData.category === 'Materials' ? materialItems : [],
-      items: formData.category === 'Materials' ? materialItems : [],
+      materialItems: isAdditional
+        ? addlMaterialItems.map((m) => {
+            const qty = parseFloat(m.quantity) || 1;
+            const amt = parseFloat(m.amount) || 0;
+            return {
+              materialName: m.material || 'Material',
+              quantity: qty,
+              unit: m.unit || 'Units',
+              rate: qty > 0 ? Math.round((amt / qty) * 100) / 100 : amt,
+              amount: amt,
+            };
+          })
+        : formData.category === 'Materials'
+        ? materialItems.map((row) => {
+            const qty = parseFloat(row.quantity) || parseFloat(row.weight) || parseFloat(row.length) || 1;
+            const amt = parseFloat(row.amount) || 0;
+            const rt = parseFloat(row.rate) || (qty > 0 ? Math.round((amt / qty) * 100) / 100 : 0);
+            const fallbackUnit =
+              isSteelMaterial(formData.materialName) || isRingMaterial(formData.materialName)
+                ? 'Kg'
+                : formData.unit || 'Units';
+            return {
+              ...row,
+              materialName:
+                row.materialName ||
+                row.material ||
+                row.materialType ||
+                row.steelType ||
+                row.ringType ||
+                row.sandType ||
+                formData.materialName ||
+                'Material',
+              quantity: qty,
+              unit: row.unit || fallbackUnit,
+              rate: rt,
+              amount: amt,
+            };
+          })
+        : [],
+      items: isAdditional
+        ? addlMaterialItems.map((m) => {
+            const qty = parseFloat(m.quantity) || 1;
+            const amt = parseFloat(m.amount) || 0;
+            return {
+              materialName: m.material || 'Material',
+              quantity: qty,
+              unit: m.unit || 'Units',
+              rate: qty > 0 ? Math.round((amt / qty) * 100) / 100 : amt,
+              amount: amt,
+            };
+          })
+        : formData.category === 'Materials'
+        ? materialItems.map((row) => {
+            const qty = parseFloat(row.quantity) || parseFloat(row.weight) || parseFloat(row.length) || 1;
+            const amt = parseFloat(row.amount) || 0;
+            const rt = parseFloat(row.rate) || (qty > 0 ? Math.round((amt / qty) * 100) / 100 : 0);
+            const fallbackUnit =
+              isSteelMaterial(formData.materialName) || isRingMaterial(formData.materialName)
+                ? 'Kg'
+                : formData.unit || 'Units';
+            return {
+              materialName:
+                row.materialName ||
+                row.material ||
+                row.materialType ||
+                row.steelType ||
+                row.ringType ||
+                row.sandType ||
+                formData.materialName ||
+                'Material',
+              quantity: qty,
+              unit: row.unit || fallbackUnit,
+              rate: rt,
+              amount: amt,
+            };
+          })
+        : [],
     };
 
-    onAddExpense(newExpense);
-    onClose();
+    saving.current = true;
+    setIsSaving(true);
+    try {
+      submissionKey.current ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      await onAddExpense({ ...newExpense, submissionKey: submissionKey.current });
+      onClose();
+    } catch (error) {
+      setSaveError(error.message || 'Could not save this record.');
+    } finally {
+      saving.current = false;
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -1825,14 +1962,11 @@ export default function AddExpenseModal({
                           onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
                           className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 cursor-pointer shadow-2xs"
                         >
-                          <option value="Tata Ace / Mini Truck">Tata Ace / Mini Truck</option>
-                          <option value="Pickup / Bolero Truck">Pickup / Bolero Truck</option>
-                          <option value="Tipper / Dumper">Tipper / Dumper</option>
-                          <option value="Tractor">Tractor</option>
-                          <option value="6-Wheeler Lorry">6-Wheeler Lorry</option>
-                          <option value="10-Wheeler Lorry">10-Wheeler Lorry</option>
-                          <option value="Auto / 3-Wheeler">Auto / 3-Wheeler</option>
-                          <option value="Other Vehicle">Other Vehicle</option>
+                          {vehicleTypeOptions.map((vt) => (
+                            <option key={vt} value={vt}>
+                              {vt}
+                            </option>
+                          ))}
                         </select>
                         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                       </div>
@@ -2257,16 +2391,11 @@ export default function AddExpenseModal({
                         }}
                         className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 pr-8 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs cursor-pointer"
                       >
-                        <option value="JCB / Excavator">JCB / Excavator</option>
-                        <option value="Concrete Mixer Machine">Concrete Mixer Machine</option>
-                        <option value="Generator (DG Set)">Generator (DG Set)</option>
-                        <option value="Tractor">Tractor</option>
-                        <option value="Crane">Crane</option>
-                        <option value="Scaffolding">Scaffolding</option>
-                        <option value="Tipper / Dumper">Tipper / Dumper</option>
-                        <option value="Earth Compactor / Roller">Earth Compactor / Roller</option>
-                        <option value="Concrete Vibrator / Needle">Concrete Vibrator / Needle</option>
-                        <option value="Other Machinery">Other Machinery</option>
+                        {rentalEquipmentOptions.map((eq) => (
+                          <option key={eq} value={eq}>
+                            {eq}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>
@@ -2337,11 +2466,11 @@ export default function AddExpenseModal({
                         }}
                         className="w-full appearance-none px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 pr-8 shadow-2xs cursor-pointer"
                       >
-                        <option value="Hours">Hours</option>
-                        <option value="Days">Days</option>
-                        <option value="Shifts">Shifts</option>
-                        <option value="Trips">Trips</option>
-                        <option value="Months">Months</option>
+                        {rentalUnitOptions.map((u) => (
+                          <option key={u} value={u}>
+                            {u}
+                          </option>
+                        ))}
                       </select>
                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
                     </div>
@@ -2356,11 +2485,23 @@ export default function AddExpenseModal({
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-500">₹</span>
                       <input
                         type="number"
+                        min="0.01"
                         step="any"
+                        required
                         placeholder="3000"
                         value={formData.rentalRate}
-                        onChange={(e) => setFormData({ ...formData, rentalRate: e.target.value, rate: e.target.value })}
-                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs"
+                        onWheel={(e) => e.target.blur()}
+                        onKeyDown={(e) => {
+                          if (['-', '+', 'e', 'E'].includes(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val !== '' && Number(val) < 0) return;
+                          setFormData({ ...formData, rentalRate: val, rate: val });
+                        }}
+                        className="w-full pl-8 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 shadow-2xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       />
                     </div>
                   </div>
@@ -2817,8 +2958,10 @@ export default function AddExpenseModal({
             >
               Cancel
             </button>
+            {saveError && <p role="alert" className="text-xs font-semibold text-rose-700">{saveError}</p>}
             <button
               type="submit"
+              disabled={isSaving}
               className={`px-6 py-2.5 rounded-xl text-white text-xs font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer ${
                 mainTab === 'Additional Work'
                   ? 'bg-purple-700 hover:bg-purple-800 shadow-purple-700/20'

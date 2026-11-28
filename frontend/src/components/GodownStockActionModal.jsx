@@ -13,7 +13,20 @@ import {
   Save,
   IndianRupee,
 } from 'lucide-react';
-import { getMaterialConfig } from '../constants/materialsData';
+import { getMaterialConfig, getConsolidatedMaterialName } from '../constants/materialsData';
+import { useDropdowns } from '../context/DropdownContext';
+
+const GODOWN_KEY_MAP = {
+  Cement: 'godown.cement',
+  Sand: 'godown.sand',
+  Aggregate: 'godown.aggregate',
+  Steel: 'godown.steel',
+  Rings: 'godown.rings',
+  Bricks: 'godown.bricks',
+  'Solid Blocks': 'godown.solid_blocks',
+  'AAC Blocks': 'godown.aac_blocks',
+  'AAC Paste': 'godown.aac_paste',
+};
 
 /**
  * Strict positive whole number check (>= 1, no 0, no negatives, no decimals)
@@ -45,11 +58,21 @@ export default function GodownStockActionModal({
 }) {
   const [activeTab, setActiveTab] = useState('INWARD'); // 'INWARD' | 'OUTWARD'
   const [submitting, setSubmitting] = useState(false);
+  const { getOptions } = useDropdowns();
 
   const config = useMemo(() => {
     if (!material) return { units: ['Units'], types: [], sizes: [], brands: [] };
-    return getMaterialConfig(material.name, material.category, material.unit);
-  }, [material]);
+    const base = getMaterialConfig(material.name, material.category, material.unit);
+    const parentName = getConsolidatedMaterialName(material.name, material.category);
+    const keyPrefix = GODOWN_KEY_MAP[parentName];
+    if (!keyPrefix) return base;
+    return {
+      types: getOptions(`${keyPrefix}.types`, base.types),
+      sizes: getOptions(`${keyPrefix}.sizes`, base.sizes),
+      brands: getOptions(`${keyPrefix}.brands`, base.brands),
+      units: getOptions(`${keyPrefix}.units`, base.units),
+    };
+  }, [material, getOptions]);
 
   const availableStock = material?.availableQuantity ?? material?.stock ?? 0;
 

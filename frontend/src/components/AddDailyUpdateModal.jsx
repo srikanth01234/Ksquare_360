@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { modalBackdropVariants, modalContentVariants } from '../utils/animations';
 import {
@@ -18,6 +18,7 @@ import {
   FileEdit,
 } from 'lucide-react';
 import { CONSTRUCTION_MATERIALS, LABOUR_WORKER_TYPES } from '../constants/constructionData';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function AddDailyUpdateModal({
   isOpen,
@@ -26,13 +27,33 @@ export default function AddDailyUpdateModal({
   lockedSite = null,
   sites = [],
 }) {
+  const { getOptions } = useDropdowns();
+  const workPhaseOptions = getOptions('dailyUpdates.workPhases', [
+    'Foundation Work',
+    'Brick Work',
+    'Plastering Work',
+    'Painting Work',
+    'Site Preparation',
+    'Electrical & Plumbing',
+  ]);
+  const materialUnitOptions = getOptions('dailyUpdates.materialUnits', [
+    'Kg',
+    'Bags',
+    'Loads',
+    'Tons',
+    'Liters',
+    'Pieces',
+  ]);
+  const saving = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [formData, setFormData] = useState({
     site: lockedSite || (sites.length > 0 ? `${sites[0].name} (${sites[0].code})` : ''),
     date: new Date().toISOString().split('T')[0],
     activity: 'Foundation Work',
     description: '',
-    progress: 50,
-    totalLabour: '4',
+    progress: 0,
+    totalLabour: '',
     remarks: '',
   });
 
@@ -45,12 +66,13 @@ export default function AddDailyUpdateModal({
     }
   }, [lockedSite, sites]);
 
-  const [selectedLabourTypes, setSelectedLabourTypes] = useState(['Mason', 'Carpenter']);
+  React.useEffect(() => {
+    if (!isOpen) setSaveError('');
+  }, [isOpen]);
 
-  const [materials, setMaterials] = useState([
-    { id: 1, material: 'Steel', quantity: '200', unit: 'Kg' },
-    { id: 2, material: 'Cement', quantity: '10', unit: 'Bags' },
-  ]);
+  const [selectedLabourTypes, setSelectedLabourTypes] = useState([]);
+
+  const [materials, setMaterials] = useState([]);
 
   const toggleLabourType = (workerType) => {
     if (selectedLabourTypes.includes(workerType)) {
@@ -77,8 +99,10 @@ export default function AddDailyUpdateModal({
     );
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving.current) return;
+    setSaveError('');
     if (!formData.description) return;
 
     const matchingSite = sites.find(
@@ -90,12 +114,17 @@ export default function AddDailyUpdateModal({
     const siteParts = formData.site.split(' (');
     const siteName = matchingSite ? matchingSite.name : siteParts[0] || 'Site';
     const siteCode = matchingSite ? matchingSite.code : siteParts[1] ? siteParts[1].replace(')', '') : '';
-    const siteId = matchingSite ? (matchingSite._id || matchingSite.id) : (sites[0]?._id || sites[0]?.id || null);
+    const siteId = matchingSite ? (matchingSite._id || matchingSite.id) : null;
+
+    if (!siteId) {
+      setSaveError('Select a valid construction site.');
+      return;
+    }
 
     const materialsSummary = materials
       .filter((m) => m.material)
       .map((m) => `${m.material} ${m.quantity ? `(${m.quantity} ${m.unit})` : ''}`.trim())
-      .join(', ') || 'Materials';
+      .join(', ');
 
     const newUpdate = {
       siteId,
@@ -116,8 +145,20 @@ export default function AddDailyUpdateModal({
       notes: formData.remarks || '',
     };
 
-    onAddUpdate(newUpdate);
-    onClose();
+    saving.current = true;
+    setIsSaving(true);
+    try {
+      await onAddUpdate(newUpdate);
+      setFormData((previous) => ({ ...previous, description: '', progress: 0, totalLabour: '', remarks: '' }));
+      setSelectedLabourTypes([]);
+      setMaterials([]);
+      onClose();
+    } catch (error) {
+      setSaveError(error.message || 'Could not save this record.');
+    } finally {
+      saving.current = false;
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -225,12 +266,11 @@ export default function AddDailyUpdateModal({
                     onChange={(e) => setFormData({ ...formData, activity: e.target.value })}
                     className="w-full appearance-none pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   >
-                    <option value="Foundation Work">Foundation Work</option>
-                    <option value="Brick Work">Brick Work</option>
-                    <option value="Plastering Work">Plastering Work</option>
-                    <option value="Painting Work">Painting Work</option>
-                    <option value="Site Preparation">Site Preparation</option>
-                    <option value="Electrical & Plumbing">Electrical & Plumbing</option>
+                    {workPhaseOptions.map((phase) => (
+                      <option key={phase} value={phase}>
+                        {phase}
+                      </option>
+                    ))}
                   </select>
                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
@@ -430,8 +470,10 @@ export default function AddDailyUpdateModal({
             >
               Cancel
             </button>
+            {saveError && <p role="alert" className="text-xs font-semibold text-rose-700">{saveError}</p>}
             <button
               type="submit"
+              disabled={isSaving}
               className="px-6 py-2.5 rounded-xl bg-[#008744] hover:bg-[#00743a] text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
             >
               <Plus size={15} />

@@ -17,8 +17,10 @@ import {
   CheckCircle2,
   UserCheck,
   UserX,
+  ListFilter,
 } from 'lucide-react';
 import AddUserModal from '../components/AddUserModal';
+import DropdownManager from '../components/DropdownManager';
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('User Management');
@@ -28,6 +30,7 @@ export default function Settings() {
 
   const settingsMenu = [
     { id: 'User Management', label: 'User Management', icon: Users },
+    { id: 'Manage Dropdowns', label: 'Manage Dropdowns', icon: ListFilter },
     { id: 'Roles & Permissions', label: 'Roles & Permissions', icon: Shield },
     { id: 'Company Details', label: 'Company Details', icon: Building2 },
     { id: 'My Profile', label: 'My Profile', icon: User },
@@ -149,10 +152,12 @@ export default function Settings() {
               Settings
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-              User Management
+              {activeTab === 'Manage Dropdowns' ? 'Manage Dropdowns' : 'User Management'}
             </h1>
             <p className="text-xs md:text-sm text-slate-500 mt-0.5">
-              Add, edit and manage system users and their access.
+              {activeTab === 'Manage Dropdowns'
+                ? 'Customize dropdown options across all 8 modules in one place.'
+                : 'Add, edit and manage system users and their access.'}
             </p>
           </div>
         </div>
@@ -200,8 +205,12 @@ export default function Settings() {
           })}
         </div>
 
-        {/* Right Column: User Management Content (8.5 cols) */}
-        <div className="lg:col-span-9 bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-6">
+        {/* Right Column: Active Settings Content (9 cols) */}
+        <div className="lg:col-span-9">
+          {activeTab === 'Manage Dropdowns' ? (
+            <DropdownManager />
+          ) : (
+            <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-6">
           {/* Header Row: Title & Add User Button */}
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
@@ -362,7 +371,9 @@ export default function Settings() {
                 );
               })}
             </div>
+            </div>
           </div>
+          )}
         </div>
       </div>
 

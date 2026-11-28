@@ -16,8 +16,22 @@ import {
   RotateCw,
   Save,
 } from 'lucide-react';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function AddEmployeeModal({ isOpen, onClose, onSaveEmployee }) {
+  const { getOptions } = useDropdowns();
+  const designationOptions = getOptions('masterData.employeeDesignations', [
+    'Site Engineer',
+    'Project Manager',
+    'Site Supervisor',
+    'Quantity Surveyor',
+  ]);
+  const departmentOptions = getOptions('masterData.employeeDepartments', [
+    'Civil',
+    'Operations',
+    'Quality & Safety',
+    'Accounts',
+  ]);
   const [formData, setFormData] = useState({
     empId: 'EMP-001',
     name: '',
@@ -173,10 +187,11 @@ export default function AddEmployeeModal({ isOpen, onClose, onSaveEmployee }) {
                   onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
                 >
-                  <option value="Site Engineer">Site Engineer</option>
-                  <option value="Project Manager">Project Manager</option>
-                  <option value="Site Supervisor">Site Supervisor</option>
-                  <option value="Quantity Surveyor">Quantity Surveyor</option>
+                  {designationOptions.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -189,10 +204,11 @@ export default function AddEmployeeModal({ isOpen, onClose, onSaveEmployee }) {
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800"
                 >
-                  <option value="Civil">Civil</option>
-                  <option value="Operations">Operations</option>
-                  <option value="Quality & Safety">Quality & Safety</option>
-                  <option value="Accounts">Accounts</option>
+                  {departmentOptions.map((dept) => (
+                    <option key={dept} value={dept}>
+                      {dept}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

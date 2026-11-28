@@ -15,8 +15,12 @@ import {
   Eye,
   CheckCircle2,
 } from 'lucide-react';
+import { useDropdowns } from '../context/DropdownContext';
 
 export default function CreateInvoice({ onBack = () => {}, onInvoiceCreated = () => {} }) {
+  const { getOptions } = useDropdowns();
+  const itemUnitOptions = getOptions('invoices.itemUnits', ['Lot', 'Sq.Ft', 'Hours', 'Days']);
+  const paymentTermOptions = getOptions('invoices.paymentTerms', ['Net 15 Days', 'Net 30 Days', 'Due on Receipt']);
   const [formData, setFormData] = useState({
     invoiceNumber: 'INV-0025',
     invoiceDate: '2026-11-01',
@@ -294,10 +298,11 @@ export default function CreateInvoice({ onBack = () => {}, onInvoiceCreated = ()
                               onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
                               className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800"
                             >
-                              <option value="Lot">Lot</option>
-                              <option value="Sq.Ft">Sq.Ft</option>
-                              <option value="Hours">Hours</option>
-                              <option value="Days">Days</option>
+                              {itemUnitOptions.map((u) => (
+                                <option key={u} value={u}>
+                                  {u}
+                                </option>
+                              ))}
                             </select>
                           </td>
                           <td className="py-3 px-2">
@@ -363,9 +368,11 @@ export default function CreateInvoice({ onBack = () => {}, onInvoiceCreated = ()
                   onChange={(e) => setFormData({ ...formData, paymentTerms: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800"
                 >
-                  <option value="Net 15 Days">Net 15 Days</option>
-                  <option value="Net 30 Days">Net 30 Days</option>
-                  <option value="Due on Receipt">Due on Receipt</option>
+                  {paymentTermOptions.map((term) => (
+                    <option key={term} value={term}>
+                      {term}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

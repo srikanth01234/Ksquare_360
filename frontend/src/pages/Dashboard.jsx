@@ -33,6 +33,7 @@ import {
   dailyUpdateApi,
   godownApi,
 } from '../services/api';
+import { Skeleton, CardSkeleton, KpiSkeleton } from '../components/Skeleton';
 
 export default function Dashboard({ onNavigate = () => {} }) {
   const [loading, setLoading] = useState(true);
@@ -100,96 +101,56 @@ export default function Dashboard({ onNavigate = () => {} }) {
     loadDashboardData();
   };
 
-  // 1. Site Counts
-  const totalSitesCount = sites.length > 0 ? sites.length : 24;
-  const activeSitesCount = sites.filter((s) => s.status === 'Active').length || 16;
-  const completedSitesCount = sites.filter((s) => s.status === 'Completed').length || 6;
-  const onHoldSitesCount = sites.filter((s) => s.status === 'On Hold').length || 2;
+  // 1. Site Counts (strictly from live API data, no fake fallbacks)
+  const totalSitesCount = sites.length;
+  const activeSitesCount = sites.filter((s) => s.status === 'Active').length;
+  const completedSitesCount = sites.filter((s) => s.status === 'Completed').length;
+  const onHoldSitesCount = sites.filter((s) => s.status === 'On Hold').length;
 
   // 2. Godown Stock Stats
-  const totalMaterialsCount = stocks.length > 0 ? stocks.length : 32;
+  const totalMaterialsCount = stocks.length;
   const lowStockItems = useMemo(() => {
-    const list = stocks.filter((s) => (s.currentStock || s.stock || 0) <= (s.minStockLevel || 15));
-    if (list.length > 0) return list;
-    return [
-      {
-        name: 'M-Sand – Black',
-        image: 'https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=120&q=80',
-      },
-      {
-        name: 'Cement',
-        image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=120&q=80',
-      },
-      {
-        name: 'Steel Rod',
-        image: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?auto=format&fit=crop&w=120&q=80',
-      },
-    ];
+    return stocks.filter(
+      (s) => (s.currentStock ?? s.stock ?? 0) <= (s.minStockLevel ?? s.reorderLevel ?? 15)
+    );
   }, [stocks]);
 
-  const lowStockCount = stocks.length > 0
-    ? stocks.filter((s) => (s.currentStock || s.stock || 0) <= (s.minStockLevel || 15)).length
-    : 5;
+  const lowStockCount = lowStockItems.length;
 
   // 3. Recent Daily Updates
   const displayDailyUpdates = useMemo(() => {
-    if (dailyUpdates.length > 0) {
-      return dailyUpdates.slice(0, 3).map((u, i) => ({
-        id: u._id || u.id || i,
-        siteName: u.siteName || 'Green Villa',
-        siteCode: u.siteCode || `CHN-10-2026-N03-0${i + 1}`,
-        workSummary: u.workSummary || u.notes || 'Foundation work completed.',
-        dateFormatted: u.date ? new Date(u.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Today, 10:30 AM',
-        status: u.workStatus || 'Active',
-        image:
-          i === 0
-            ? 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=160&q=80'
-            : i === 1
-            ? 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=160&q=80'
-            : 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=160&q=80',
-      }));
-    }
-
-    return [
-      {
-        id: 1,
-        siteName: 'Green Villa',
-        siteCode: 'CHN-10-2026-N03-01',
-        workSummary: 'Foundation work completed.',
-        dateFormatted: 'Today, 10:30 AM',
-        status: 'Active',
-        image: 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=160&q=80',
-      },
-      {
-        id: 2,
-        siteName: 'RK Residence',
-        siteCode: 'CHN-10-2026-N03-02',
-        workSummary: 'M-Sand received – 10 CFT.',
-        dateFormatted: 'Today, 09:15 AM',
-        status: 'Active',
-        image: 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=160&q=80',
-      },
-      {
-        id: 3,
-        siteName: 'Orchid Heights',
-        siteCode: 'CHN-09-2026-N03-01',
-        workSummary: 'Labour work updated.',
-        dateFormatted: 'Yesterday, 04:20 PM',
-        status: 'Active',
-        image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=160&q=80',
-      },
-    ];
+    return dailyUpdates.slice(0, 3).map((u, i) => ({
+      id: u._id || u.id || i,
+      siteName: u.siteName || (typeof u.site === 'object' ? u.site?.name : '') || 'Site',
+      siteCode: u.siteCode || (typeof u.site === 'object' ? u.site?.code : '') || '',
+      workSummary: u.workSummary || u.description || u.notes || u.title || 'Work update logged.',
+      dateFormatted: u.date
+        ? new Date(u.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+        : 'Recent',
+      status: u.workStatus || u.status || 'Active',
+      image:
+        i === 0
+          ? 'https://images.unsplash.com/photo-1541888946425-d0fbb1861593?auto=format&fit=crop&w=160&q=80'
+          : i === 1
+          ? 'https://images.unsplash.com/photo-1590381105924-c72589b9ef3f?auto=format&fit=crop&w=160&q=80'
+          : 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=160&q=80',
+    }));
   }, [dailyUpdates]);
 
   // 4. Pending Payments Calculation
   const { clientPending, supplierPending, totalOutstanding } = useMemo(() => {
     // Unpaid invoices (Client pending)
     const unpaidInvoices = invoices.filter((i) => i.status !== 'Paid');
-    const clientDue = unpaidInvoices.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0) || 150000;
+    const clientDue = unpaidInvoices.reduce((sum, i) => sum + (i.totalAmount || i.amount || 0), 0);
 
     // Unpaid expenses (Supplier pending)
-    const unpaidExpenses = expenses.filter((e) => e.paymentStatus === 'Pending' || e.paymentStatus === 'Partial');
-    const supplierDue = unpaidExpenses.reduce((sum, e) => sum + (e.pendingAmount || e.amount || 0), 0) || 95000;
+    const unpaidExpenses = expenses.filter(
+      (e) => e.paymentStatus === 'Pending' || e.paymentStatus === 'Partial'
+    );
+    const supplierDue = unpaidExpenses.reduce(
+      (sum, e) => sum + (e.pendingAmount ?? e.amount ?? 0),
+      0
+    );
 
     return {
       clientPending: clientDue,
@@ -241,8 +202,24 @@ export default function Dashboard({ onNavigate = () => {} }) {
         </div>
 
         {/* ========================================================================= */}
-        {/* 2. TOP METRIC CARDS ROW (4 CARDS)                                         */}
+        {/* 2. TOP METRIC CARDS ROW (4 CARDS) - SKELETON OR LIVE DATA                */}
         {/* ========================================================================= */}
+        {loading ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <KpiSkeleton key={i} />
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+              <CardSkeleton rows={3} className="lg:col-span-4 rounded-3xl" />
+              <CardSkeleton rows={3} className="lg:col-span-5 rounded-3xl" />
+              <CardSkeleton rows={3} className="lg:col-span-3 rounded-3xl" />
+            </div>
+          </>
+        ) : (
+        <>
         <motion.div
           variants={staggerContainer}
           initial="hidden"
@@ -415,7 +392,12 @@ export default function Dashboard({ onNavigate = () => {} }) {
               <h3 className="text-xs font-bold text-slate-800 tracking-tight">Low Stock Alerts</h3>
 
               <div className="space-y-2.5">
-                {lowStockItems.slice(0, 3).map((item, idx) => (
+                {lowStockItems.length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-center text-xs font-semibold text-emerald-700">
+                    All stock levels are healthy
+                  </div>
+                ) : (
+                lowStockItems.slice(0, 3).map((item, idx) => (
                   <div
                     key={idx}
                     className="flex items-center justify-between p-2 rounded-2xl hover:bg-slate-50/70 transition-colors"
@@ -425,6 +407,7 @@ export default function Dashboard({ onNavigate = () => {} }) {
                         <img
                           src={
                             item.image ||
+                            item.imageUrl ||
                             (idx === 0
                               ? 'https://images.unsplash.com/photo-1578844251758-2f71da64c96f?auto=format&fit=crop&w=120&q=80'
                               : idx === 1
@@ -442,7 +425,8 @@ export default function Dashboard({ onNavigate = () => {} }) {
                       Low Stock
                     </span>
                   </div>
-                ))}
+                ))
+                )}
               </div>
             </div>
           </motion.div>
@@ -474,7 +458,12 @@ export default function Dashboard({ onNavigate = () => {} }) {
 
             {/* Updates List */}
             <div className="space-y-3.5">
-              {displayDailyUpdates.map((update) => (
+              {displayDailyUpdates.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-slate-50 border border-slate-100 text-center text-xs font-medium text-slate-500">
+                  No recent daily updates recorded yet.
+                </div>
+              ) : (
+              displayDailyUpdates.map((update) => (
                 <div
                   key={update.id}
                   className="flex items-center justify-between gap-3 p-2 rounded-2xl hover:bg-slate-50/70 transition-colors"
@@ -490,9 +479,11 @@ export default function Dashboard({ onNavigate = () => {} }) {
                     <div className="min-w-0 space-y-0.5">
                       <div className="text-xs font-extrabold text-slate-900 truncate">
                         {update.siteName}{' '}
-                        <span className="text-[11px] font-normal text-slate-500">
-                          ({update.siteCode})
-                        </span>
+                        {update.siteCode && (
+                          <span className="text-[11px] font-normal text-slate-500">
+                            ({update.siteCode})
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-600 truncate font-medium">
                         {update.workSummary}
@@ -508,7 +499,8 @@ export default function Dashboard({ onNavigate = () => {} }) {
                     {update.status || 'Active'}
                   </span>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </motion.div>
 
@@ -576,6 +568,8 @@ export default function Dashboard({ onNavigate = () => {} }) {
             </motion.button>
           </motion.div>
         </motion.div>
+        </>
+        )}
 
         {/* ========================================================================= */}
         {/* 4. BOTTOM BAR: QUICK ACTIONS DOCK                                         */}
@@ -596,7 +590,7 @@ export default function Dashboard({ onNavigate = () => {} }) {
             <motion.button
               whileHover={{ scale: 1.03, y: -2 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() => onNavigate('Sites')}
+              onClick={() => onNavigate('Master Data')}
               className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-white/90 hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-xs font-bold transition-shadow cursor-pointer shadow-xs"
             >
               <span className="w-5 h-5 rounded-full bg-[#10b981] text-white flex items-center justify-center font-bold text-xs">
